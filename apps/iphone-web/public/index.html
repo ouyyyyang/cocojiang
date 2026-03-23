@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Screen Pilot</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-glow page-glow-a"></div>
+    <div class="page-glow page-glow-b"></div>
+
+    <div class="app-stage">
+      <div class="device-preview">
+        <div class="device-caption">
+          <span class="device-caption-kicker">Mobile Preview</span>
+          <strong>iPhone 16 Pro</strong>
+        </div>
+
+        <div class="device-frame">
+          <div class="device-island"></div>
+
+          <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+          <div id="error-modal-backdrop" class="modal-backdrop hidden"></div>
+
+          <aside id="drawer" class="drawer hidden" aria-hidden="true">
+            <div class="drawer-head">
+              <div>
+                <p class="eyebrow">Navigation</p>
+                <h2>Screen Pilot</h2>
+              </div>
+              <button id="drawer-close" class="icon-button" type="button" aria-label="关闭菜单">×</button>
+            </div>
+
+            <nav class="drawer-nav" aria-label="Main navigation">
+              <button class="drawer-link active" data-view="home" type="button">主页</button>
+              <button class="drawer-link" data-view="pair" type="button">配对</button>
+              <button class="drawer-link" data-view="status" type="button">状态</button>
+              <button class="drawer-link" data-view="detail" type="button">详情</button>
+              <button class="drawer-link" data-view="history" type="button">历史</button>
+            </nav>
+
+            <div class="drawer-footer">
+              <div class="drawer-status-card">
+                <span class="drawer-status-label">连接状态</span>
+                <strong id="socket-pill" class="drawer-status-value">WS Offline</strong>
+              </div>
+              <button id="disconnect-button" class="ghost-button full-button" type="button">清除配对</button>
+            </div>
+          </aside>
+
+          <section id="error-modal" class="error-modal hidden" aria-hidden="true">
+            <div class="error-modal-head">
+              <div>
+                <p class="section-kicker">Error</p>
+                <h2>报错详情</h2>
+              </div>
+              <button id="error-modal-close" class="icon-button" type="button" aria-label="关闭报错详情">×</button>
+            </div>
+
+            <div class="detail-meta">
+              <div class="detail-meta-item">
+                <span>会话</span>
+                <strong id="error-modal-session">-</strong>
+              </div>
+              <div class="detail-meta-item">
+                <span>时间</span>
+                <strong id="error-modal-time">-</strong>
+              </div>
+            </div>
+
+            <div class="detail-block">
+              <h3>错误信息</h3>
+              <p id="error-modal-message"></p>
+            </div>
+
+            <button id="error-modal-open-detail" class="ghost-button full-button hidden" type="button">打开详情页</button>
+          </section>
+
+          <main class="phone-app">
+            <header class="topbar">
+              <div class="topbar-left">
+                <button id="menu-button" class="icon-button" type="button" aria-label="打开菜单">☰</button>
+                <div>
+                  <p class="eyebrow">Mobile Companion</p>
+                  <h1 id="page-title">主页</h1>
+                </div>
+              </div>
+
+              <div class="topbar-meta">
+                <span id="pair-state-pill" class="pill" data-state="idle">未配对</span>
+              </div>
+            </header>
+
+            <section id="top-toast" class="top-toast hidden" aria-live="polite">
+              <div>
+                <p id="top-toast-title" class="status-label">错误提示</p>
+                <strong id="top-toast-message"></strong>
+              </div>
+              <div class="top-toast-actions">
+                <button id="top-toast-view" class="toast-action-button hidden" type="button">查看</button>
+                <button id="top-toast-close" class="toast-close-button" type="button" aria-label="关闭提示">×</button>
+              </div>
+            </section>
+
+            <section class="hero-panel panel">
+              <p class="hero-title">iPhone 结果接收端</p>
+              <p class="hero-subtitle">
+                这个网页现在只负责配对、发起分析、接收状态和查看历史。Mac 端的模型配置、Codex 认证、抓屏测试和模型测试都已移到原生 App。
+              </p>
+            </section>
+
+            <section id="view-home" class="screen-view active">
+              <section class="panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Home</p>
+                    <h2>发起分析</h2>
+                  </div>
+                  <span class="section-tag">Ask</span>
+                </div>
+
+                <p class="support-copy compact-copy">
+                  输入一句你想让 Agent 回答的问题。抓图目标固定为主显示器整屏，分析结果会同步推到状态、详情和历史页。
+                </p>
+
+                <form id="analyze-form" class="form-stack">
+                  <label class="field">
+                    <span>你的问题</span>
+                    <textarea
+                      id="question"
+                      name="question"
+                      rows="7"
+                      placeholder="例如：解释当前屏幕上最重要的问题，并告诉我下一步怎么处理。"
+                    ></textarea>
+                  </label>
+
+                  <button id="analyze-button" class="primary-button full-button" type="submit">抓取并分析</button>
+                </form>
+              </section>
+            </section>
+
+            <section id="view-pair" class="screen-view hidden">
+              <section class="panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Pair</p>
+                    <h2>设备配对</h2>
+                  </div>
+                  <span class="section-tag">Token</span>
+                </div>
+
+                <p class="support-copy">
+                  在 Mac 原生 App 里启动服务后，会显示 pairing token。把它粘贴到这里即可绑定这台手机。
+                </p>
+
+                <form id="pair-form" class="form-stack">
+                  <label class="field">
+                    <span>Pairing Token</span>
+                    <input id="pair-token" name="token" autocomplete="off" spellcheck="false" required />
+                  </label>
+
+                  <button id="pair-button" class="primary-button full-button" type="submit">完成配对</button>
+                </form>
+              </section>
+            </section>
+
+            <section id="view-status" class="screen-view hidden">
+              <section class="panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Live</p>
+                    <h2>状态流</h2>
+                  </div>
+                  <span class="section-tag">Realtime</span>
+                </div>
+
+                <div class="status-card">
+                  <span class="status-label">当前状态</span>
+                  <strong id="status-text">等待新的分析请求。</strong>
+                </div>
+
+                <div id="event-log" class="event-log"></div>
+              </section>
+            </section>
+
+            <section id="view-detail" class="screen-view hidden">
+              <section class="panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Result</p>
+                    <h2>分析详情</h2>
+                  </div>
+                  <span id="current-session-label" class="section-tag">No Session</span>
+                </div>
+
+                <div id="detail-empty" class="empty-state">发起一次分析后，截图和结构化结果会显示在这里。</div>
+
+                <div id="detail-view" class="detail-view hidden">
+                  <div class="capture-frame">
+                    <img id="detail-image" class="capture-image" alt="Latest captured screen" />
+                  </div>
+
+                  <div class="detail-meta">
+                    <div class="detail-meta-item">
+                      <span>更新时间</span>
+                      <strong id="detail-updated-at">-</strong>
+                    </div>
+                    <div class="detail-meta-item">
+                      <span>问题</span>
+                      <strong id="detail-question">-</strong>
+                    </div>
+                  </div>
+
+                  <div class="detail-block highlight-block">
+                    <h3>摘要</h3>
+                    <p id="detail-summary"></p>
+                  </div>
+
+                  <div class="detail-grid">
+                    <div class="detail-block">
+                      <h3>关键元素</h3>
+                      <ul id="detail-key-points" class="detail-list"></ul>
+                    </div>
+                    <div class="detail-block">
+                      <h3>OCR 文本</h3>
+                      <ul id="detail-ocr" class="detail-list"></ul>
+                    </div>
+                    <div class="detail-block">
+                      <h3>回答</h3>
+                      <p id="detail-answer"></p>
+                    </div>
+                    <div class="detail-block">
+                      <h3>下一步建议</h3>
+                      <ul id="detail-next-actions" class="detail-list"></ul>
+                    </div>
+                    <div class="detail-block">
+                      <h3>不确定点</h3>
+                      <ul id="detail-uncertainties" class="detail-list"></ul>
+                    </div>
+                    <div class="detail-block">
+                      <h3>错误</h3>
+                      <p id="detail-error"></p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </section>
+
+            <section id="view-history" class="screen-view hidden">
+              <section class="panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Archive</p>
+                    <h2>历史记录</h2>
+                  </div>
+                  <button id="refresh-history" class="ghost-button" type="button">刷新</button>
+                </div>
+
+                <div id="history-list" class="history-list"></div>
+              </section>
+            </section>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

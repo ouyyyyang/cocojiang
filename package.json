@@ -1,0 +1,24 @@
+{
+  "name": "screen-pilot-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Screen Pilot workspace with one shared agent core and separate Mac/iPhone shells.",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "dev": "tsx core/agent/src/server.ts",
+    "dev:agent": "tsx core/agent/src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node build/node/core/agent/src/server.js",
+    "start:agent": "node build/node/core/agent/src/server.js",
+    "build:mac-app": "./scripts/build/rebuild-native-app.sh",
+    "test": "npm run build && node --test build/node/core/agent/test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}
