@@ -1,6 +1,7 @@
 node_modules/
 build/
 runtime/
+mac_app_logs/
 dist/
 .swift-cache/
 .xcode-derived/

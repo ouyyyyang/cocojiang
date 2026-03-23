@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Screen Pilot Console</title>
+    <link rel="stylesheet" href="/mac/styles.css" />
+  </head>
+  <body>
+    <div class="desktop-shell">
+      <aside class="desktop-sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">Desktop Console</p>
+          <h1>Screen Pilot</h1>
+          <p class="muted-copy">面向 Mac 与 Windows 的网页控制台，用来做配置、认证、抓屏测试、模型测试和历史查看。</p>
+        </div>
+
+        <section class="sidebar-card">
+          <div class="sidebar-head">
+            <h2>连接</h2>
+            <span id="socket-state" class="status-pill neutral">WS Offline</span>
+          </div>
+          <p id="service-state" class="status-copy">正在检查服务状态。</p>
+          <p class="meta-copy">网页地址固定使用当前服务域名。iPhone 接收端仍然在 <a href="/">/</a>。</p>
+        </section>
+
+        <section class="sidebar-card">
+          <div class="sidebar-head">
+            <h2>配对</h2>
+            <span id="pair-state" class="status-pill neutral">未配对</span>
+          </div>
+
+          <form id="pair-form" class="stack">
+            <label class="field">
+              <span>Pairing Token</span>
+              <input id="pair-token" autocomplete="off" spellcheck="false" placeholder="输入 token" />
+            </label>
+            <div class="button-row">
+              <button id="pair-submit" class="primary-button" type="submit">连接控制台</button>
+              <button id="disconnect-button" class="ghost-button" type="button">清除</button>
+            </div>
+          </form>
+        </section>
+
+        <nav class="sidebar-nav">
+          <button class="nav-link active" data-view="dashboard" type="button">控制台</button>
+          <button class="nav-link" data-view="settings" type="button">配置</button>
+          <button class="nav-link" data-view="testing" type="button">测试</button>
+          <button class="nav-link" data-view="history" type="button">历史</button>
+        </nav>
+      </aside>
+
+      <main class="desktop-main">
+        <header class="desktop-header">
+          <div>
+            <p class="eyebrow">Web Console</p>
+            <h2 id="view-title">控制台</h2>
+          </div>
+          <div class="header-actions">
+            <a class="ghost-button text-link" href="/">打开 iPhone 页</a>
+            <button id="refresh-all" class="ghost-button" type="button">刷新</button>
+          </div>
+        </header>
+
+        <section id="banner" class="banner hidden"></section>
+
+        <section id="view-dashboard" class="view active">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">Analyze</p>
+                <h3>发起一次真实分析</h3>
+              </div>
+              <span id="dashboard-session-label" class="tag">No Session</span>
+            </div>
+
+            <form id="analyze-form" class="stack">
+              <label class="field">
+                <span>问题</span>
+                <textarea id="analysis-question" rows="6" placeholder="例如：解释当前屏幕最重要的问题，并告诉我下一步怎么处理。"></textarea>
+              </label>
+              <div class="button-row">
+                <button id="analyze-button" class="primary-button" type="submit">抓取并分析</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="grid-two">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Live</p>
+                  <h3>状态流</h3>
+                </div>
+                <span id="status-badge" class="tag">Idle</span>
+              </div>
+              <p id="status-text" class="status-copy">等待新的分析请求。</p>
+              <div id="event-log" class="event-log"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Detail</p>
+                  <h3>当前详情</h3>
+                </div>
+              </div>
+
+              <div id="detail-empty" class="empty-state">选择或发起一次分析后，这里显示截图和结构化结果。</div>
+              <div id="detail-view" class="detail-view hidden">
+                <div class="capture-frame">
+                  <img id="detail-image" class="capture-image" alt="Captured screen" />
+                </div>
+
+                <div class="meta-grid">
+                  <div class="meta-item">
+                    <span>更新时间</span>
+                    <strong id="detail-updated-at">-</strong>
+                  </div>
+                  <div class="meta-item">
+                    <span>模型</span>
+                    <strong id="detail-model">-</strong>
+                  </div>
+                </div>
+
+                <div class="info-block">
+                  <h4>问题</h4>
+                  <p id="detail-question">-</p>
+                </div>
+                <div class="info-block accent-block">
+                  <h4>摘要</h4>
+                  <p id="detail-summary">-</p>
+                </div>
+                <div class="info-block">
+                  <h4>回答</h4>
+                  <p id="detail-answer">-</p>
+                </div>
+                <div class="list-grid">
+                  <div class="info-block">
+                    <h4>关键点</h4>
+                    <ul id="detail-key-points" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>OCR</h4>
+                    <ul id="detail-ocr" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>下一步建议</h4>
+                    <ul id="detail-next-actions" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>不确定点</h4>
+                    <ul id="detail-uncertainties" class="plain-list"></ul>
+                  </div>
+                </div>
+                <div class="info-block warning-block">
+                  <h4>错误</h4>
+                  <p id="detail-error">-</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view hidden">
+          <div class="grid-two">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Settings</p>
+                  <h3>模型配置</h3>
+                </div>
+              </div>
+              <div class="stack">
+                <label class="field">
+                  <span>模型提供方</span>
+                  <select id="model-provider"></select>
+                </label>
+                <label class="field">
+                  <span>Codex 模型</span>
+                  <select id="codex-model"></select>
+                </label>
+                <label id="local-model-field" class="field">
+                  <span>本地视觉模型</span>
+                  <select id="local-vision-model"></select>
+                </label>
+                <p id="local-provider-note" class="status-copy hidden"></p>
+                <div class="button-row">
+                  <button id="save-settings" class="primary-button" type="button">保存配置</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="auth-panel" class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Auth</p>
+                  <h3>Codex 认证</h3>
+                </div>
+                <span id="auth-status-pill" class="tag">未检查</span>
+              </div>
+              <p id="auth-detail" class="status-copy">本机 Codex 认证状态会显示在这里。</p>
+              <div class="button-row">
+                <button id="start-auth" class="primary-button" type="button">开始 OpenAI 认证</button>
+                <button id="refresh-auth" class="ghost-button" type="button">刷新状态</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="section-kicker">Runtime</p>
+                <h3>本地运行时与模型管理</h3>
+              </div>
+              <button id="refresh-runtime-status" class="ghost-button" type="button">刷新运行时</button>
+            </div>
+            <p class="status-copy">这里只接管运行时状态检测、server 启动、当前配置模型的下载/加载/卸载。安装包和模型目录仍由 LM Studio / Ollama 自己管理。</p>
+
+            <div class="runtime-grid">
+              <article class="info-block runtime-card">
+                <div class="panel-head">
+                  <div>
+                    <p class="section-kicker">LM Studio</p>
+                    <h4>LM Studio (MLX)</h4>
+                  </div>
+                  <span id="runtime-status-lmstudio" class="status-pill neutral">未检查</span>
+                </div>
+
+                <p id="runtime-copy-lmstudio" class="status-copy">等待检测 LM Studio 安装和本地 server 状态。</p>
+
+                <div class="meta-grid">
+                  <div class="meta-item">
+                    <span>CLI</span>
+                    <strong id="runtime-cli-lmstudio">-</strong>
+                  </div>
+                  <div class="meta-item">
+                    <span>Server</span>
+                    <strong id="runtime-host-lmstudio">-</strong>
+                  </div>
+                  <div class="meta-item">
+                    <span>模型目录</span>
+                    <strong id="runtime-dir-lmstudio">-</strong>
+                  </div>
+                </div>
+
+                <div class="button-row">
+                  <a href="https://lmstudio.ai/" target="_blank" rel="noreferrer" class="ghost-button text-link">官方下载</a>
+                  <button id="runtime-start-lmstudio" class="ghost-button" type="button">启动 Server</button>
+                  <button id="runtime-download-lmstudio" class="primary-button" type="button">下载当前模型</button>
+                  <button id="runtime-load-lmstudio" class="ghost-button" type="button">加载当前模型</button>
+                  <button id="runtime-unload-lmstudio" class="ghost-button" type="button">卸载当前模型</button>
+                </div>
+
+                <div class="list-grid">
+                  <div class="info-block">
+                    <h4>已下载模型</h4>
+                    <ul id="runtime-downloaded-lmstudio" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>已加载模型</h4>
+                    <ul id="runtime-loaded-lmstudio" class="plain-list"></ul>
+                  </div>
+                </div>
+
+                <div class="info-block">
+                  <h4>最近任务</h4>
+                  <p id="runtime-job-summary-lmstudio">还没有执行过任务。</p>
+                  <div class="code-block">
+                    <pre id="runtime-job-logs-lmstudio">-</pre>
+                  </div>
+                </div>
+              </article>
+
+              <article class="info-block runtime-card">
+                <div class="panel-head">
+                  <div>
+                    <p class="section-kicker">Ollama</p>
+                    <h4>本地 Ollama</h4>
+                  </div>
+                  <span id="runtime-status-ollama" class="status-pill neutral">未检查</span>
+                </div>
+
+                <p id="runtime-copy-ollama" class="status-copy">等待检测 Ollama 安装和本地 server 状态。</p>
+
+                <div class="meta-grid">
+                  <div class="meta-item">
+                    <span>CLI</span>
+                    <strong id="runtime-cli-ollama">-</strong>
+                  </div>
+                  <div class="meta-item">
+                    <span>Server</span>
+                    <strong id="runtime-host-ollama">-</strong>
+                  </div>
+                  <div class="meta-item">
+                    <span>模型目录</span>
+                    <strong id="runtime-dir-ollama">-</strong>
+                  </div>
+                </div>
+
+                <div class="button-row">
+                  <a href="https://ollama.com/download" target="_blank" rel="noreferrer" class="ghost-button text-link">官方下载</a>
+                  <button id="runtime-start-ollama" class="ghost-button" type="button">启动 Server</button>
+                  <button id="runtime-download-ollama" class="primary-button" type="button">下载当前模型</button>
+                  <button id="runtime-unload-ollama" class="ghost-button" type="button">卸载当前模型</button>
+                  <button id="runtime-remove-ollama" class="ghost-button" type="button">删除当前模型</button>
+                </div>
+
+                <div class="list-grid">
+                  <div class="info-block">
+                    <h4>已下载模型</h4>
+                    <ul id="runtime-downloaded-ollama" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>已加载模型</h4>
+                    <ul id="runtime-loaded-ollama" class="plain-list"></ul>
+                  </div>
+                </div>
+
+                <div class="info-block">
+                  <h4>最近任务</h4>
+                  <p id="runtime-job-summary-ollama">还没有执行过任务。</p>
+                  <div class="code-block">
+                    <pre id="runtime-job-logs-ollama">-</pre>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-testing" class="view hidden">
+          <div class="grid-two">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Capture</p>
+                  <h3>抓屏测试</h3>
+                </div>
+                <button id="capture-test-button" class="primary-button" type="button">测试抓屏</button>
+              </div>
+              <p class="status-copy">只验证 `screencapture` 和录屏权限，不调用模型。</p>
+              <p id="capture-meta" class="meta-copy">最近抓取时间：-</p>
+              <div id="capture-progress" class="progress-strip hidden">正在抓取当前屏幕，请稍等...</div>
+              <div class="capture-frame capture-frame-large">
+                <img id="capture-image" class="capture-image hidden" alt="Latest capture test" />
+                <div id="capture-empty" class="empty-state">还没有抓屏测试结果。</div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Model</p>
+                  <h3>模型输出测试</h3>
+                </div>
+                <button id="model-test-button" class="primary-button" type="button">运行模型测试</button>
+              </div>
+
+              <label class="field">
+                <span>测试问题</span>
+                <textarea id="model-question" rows="5">请总结当前屏幕最重要的信息，并说明是否存在错误或阻塞。</textarea>
+              </label>
+
+              <p id="model-meta" class="meta-copy">最近测试时间：-</p>
+              <div id="model-progress" class="progress-strip hidden">模型加载中，正在抓取屏幕并提交给当前提供方分析...</div>
+
+              <div class="capture-frame capture-frame-large">
+                <img id="model-image" class="capture-image hidden" alt="Latest model test capture" />
+                <div id="model-empty" class="empty-state">还没有模型测试结果。</div>
+              </div>
+
+              <div id="model-output" class="stack hidden">
+                <div class="info-block accent-block">
+                  <h4>摘要</h4>
+                  <p id="model-summary">-</p>
+                </div>
+                <div class="info-block">
+                  <h4>回答</h4>
+                  <p id="model-answer">-</p>
+                </div>
+                <div class="list-grid">
+                  <div class="info-block">
+                    <h4>关键点</h4>
+                    <ul id="model-key-points" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>下一步建议</h4>
+                    <ul id="model-next-actions" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>不确定点</h4>
+                    <ul id="model-uncertainties" class="plain-list"></ul>
+                  </div>
+                </div>
+                <div class="info-block code-block">
+                  <h4>原始 JSON</h4>
+                  <pre id="model-raw-output"></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-history" class="view hidden">
+          <div class="grid-history">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Archive</p>
+                  <h3>历史记录</h3>
+                </div>
+                <button id="refresh-history" class="ghost-button" type="button">刷新</button>
+              </div>
+              <div id="history-list" class="history-list"></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Selected</p>
+                  <h3>已选详情</h3>
+                </div>
+              </div>
+              <div id="history-detail-empty" class="empty-state">从左侧历史记录里选择一条会话。</div>
+              <div id="history-detail" class="detail-view hidden">
+                <div class="capture-frame">
+                  <img id="history-image" class="capture-image" alt="History capture" />
+                </div>
+                <div class="meta-grid">
+                  <div class="meta-item">
+                    <span>更新时间</span>
+                    <strong id="history-updated-at">-</strong>
+                  </div>
+                  <div class="meta-item">
+                    <span>状态</span>
+                    <strong id="history-status">-</strong>
+                  </div>
+                </div>
+                <div class="info-block">
+                  <h4>问题</h4>
+                  <p id="history-question">-</p>
+                </div>
+                <div class="info-block accent-block">
+                  <h4>摘要</h4>
+                  <p id="history-summary">-</p>
+                </div>
+                <div class="info-block">
+                  <h4>回答</h4>
+                  <p id="history-answer">-</p>
+                </div>
+                <div class="list-grid">
+                  <div class="info-block">
+                    <h4>关键点</h4>
+                    <ul id="history-key-points" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>OCR</h4>
+                    <ul id="history-ocr" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>下一步建议</h4>
+                    <ul id="history-next-actions" class="plain-list"></ul>
+                  </div>
+                  <div class="info-block">
+                    <h4>不确定点</h4>
+                    <ul id="history-uncertainties" class="plain-list"></ul>
+                  </div>
+                </div>
+                <div class="info-block warning-block">
+                  <h4>错误</h4>
+                  <p id="history-error">-</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/mac/app.js"></script>
+  </body>
+</html>

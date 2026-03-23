@@ -109,7 +109,7 @@ struct ContentView: View {
                 LabeledContent("运行状态", value: controller.statusText)
                 LabeledContent("服务地址", value: controller.serviceURLText)
                 LabeledContent("Pairing Token", value: controller.pairingToken)
-                LabeledContent("当前模型", value: controller.codexModel)
+                LabeledContent("当前模型", value: controller.activeModelSummary)
                 LabeledContent("认证状态", value: controller.authStatusText)
 
                 HStack {
@@ -224,8 +224,25 @@ struct ContentView: View {
                         Text("模型配置")
                             .font(.headline)
 
-                        TextField("Codex 模型", text: $controller.codexModel)
-                            .textFieldStyle(.roundedBorder)
+                        Picker("模型提供方", selection: $controller.modelProvider) {
+                            ForEach(DesktopModelProvider.allCases) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        if controller.modelProvider == .codex {
+                            TextField("Codex 模型", text: $controller.codexModel)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            TextField("本地视觉模型", text: $controller.localVisionModel)
+                                .textFieldStyle(.roundedBorder)
+
+                            Text(controller.modelProvider == .lmstudio
+                                 ? "LM Studio 模式要求你先把模型下载并加载到本地 server，模型标识建议直接统一成 `qwen3-vl:8b`。"
+                                 : "Ollama 模式会直接按模型名请求本地服务。Mac 24GB 统一内存优先从 `qwen3-vl:8b` 开始。")
+                                .foregroundStyle(.secondary)
+                        }
 
                         HStack {
                             Button(controller.isSavingSettings ? "保存中..." : "保存配置") {
@@ -234,7 +251,11 @@ struct ContentView: View {
                             .buttonStyle(.borderedProminent)
                             .disabled(!controller.isRunning || controller.isSavingSettings)
 
-                            Text("这里直接决定 `codex exec` 使用的模型。")
+                            Text(controller.modelProvider == .codex
+                                 ? "这里直接决定 `codex exec` 使用的模型。"
+                                 : controller.modelProvider == .lmstudio
+                                   ? "这里决定 LM Studio 本地 server 请求使用的模型标识。"
+                                   : "这里决定 Ollama 请求使用的本地视觉模型名。")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -242,33 +263,37 @@ struct ContentView: View {
                     Label("配置", systemImage: "slider.horizontal.3")
                 }
 
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Codex 认证")
-                            .font(.headline)
+                if controller.modelProvider == .codex {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Codex 认证")
+                                .font(.headline)
 
-                        LabeledContent("认证状态", value: controller.authStatusText)
-                        Text(controller.authDetailText)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                            LabeledContent("认证状态", value: controller.authStatusText)
+                            Text(controller.authDetailText)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
 
-                        HStack {
-                            Button(controller.isStartingAuth ? "启动中..." : "开始 OpenAI 认证") {
-                                controller.startCodexAuthentication()
+                            HStack {
+                                Button(controller.isStartingAuth ? "启动中..." : "开始 OpenAI 认证") {
+                                    controller.startCodexAuthentication()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!controller.isRunning || controller.isStartingAuth)
+
+                                Button(controller.isRefreshingAuth ? "刷新中..." : "刷新状态") {
+                                    controller.refreshAllState()
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!controller.isRunning || controller.isRefreshingAuth)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!controller.isRunning || controller.isStartingAuth)
-
-                            Button(controller.isRefreshingAuth ? "刷新中..." : "刷新状态") {
-                                controller.refreshAllState()
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(!controller.isRunning || controller.isRefreshingAuth)
                         }
+                    } label: {
+                        Label("认证", systemImage: "person.crop.circle.badge.checkmark")
                     }
-                } label: {
-                    Label("认证", systemImage: "person.crop.circle.badge.checkmark")
                 }
+
+                runtimeManagementSection
             }
         }
     }
@@ -331,9 +356,10 @@ struct ContentView: View {
                             )
 
                         LabeledContent("最近测试时间", value: controller.modelTestTimestamp)
+                        LabeledContent("当前测试链路", value: controller.activeModelSummary)
 
                         if controller.isRunningModelTest {
-                            progressHint("模型加载中，正在抓取屏幕并提交给 Codex 分析...")
+                            progressHint("模型加载中，正在抓取屏幕并提交给 \(controller.modelProvider.displayName) 分析...")
                         }
 
                         if let image = controller.modelTestImage {
@@ -402,7 +428,7 @@ struct ContentView: View {
                                     Text(session.question.isEmpty ? "未填写问题" : session.question)
                                         .font(.body.weight(.medium))
                                         .lineLimit(2)
-                                    Text("\(session.status) · \(session.codexModel)")
+                                    Text("\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel)")
                                         .foregroundStyle(.secondary)
                                         .font(.caption)
                                     Text(session.summary ?? session.error ?? "等待结果")
@@ -430,7 +456,7 @@ struct ContentView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(session.question.isEmpty ? "未填写问题" : session.question)
                                         .font(.title3.weight(.semibold))
-                                    Text("\(session.status) · \(session.codexModel)")
+                                    Text("\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel)")
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -464,6 +490,146 @@ struct ContentView: View {
                 Label("详情", systemImage: "doc.text.magnifyingglass")
             }
         }
+    }
+
+    private var runtimeManagementSection: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("本地运行时与模型管理")
+                            .font(.headline)
+                        Text("这里不接管安装包和任意路径，只负责检测状态、启动 server、下载当前配置模型、加载/卸载，以及 Ollama 的删除。")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button(controller.isRefreshingLocalRuntimes ? "刷新中..." : "刷新运行时") {
+                        controller.refreshAllState()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!controller.isRunning || controller.isRefreshingLocalRuntimes)
+                }
+
+                runtimeCard(.lmstudio)
+                runtimeCard(.ollama)
+            }
+        } label: {
+            Label("运行时", systemImage: "shippingbox")
+        }
+    }
+
+    @ViewBuilder
+    private func runtimeCard(_ runtime: DesktopLocalRuntimeSlug) -> some View {
+        let status = controller.runtimeStatus(for: runtime)
+        let latestJob = controller.latestRuntimeJob(for: runtime)
+
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(runtime.displayName)
+                        .font(.headline)
+                    Text(runtimeCopy(runtime: runtime, status: status))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(runtimeStatusLabel(status))
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(runtimeStatusColor(status).opacity(0.12))
+                    .foregroundStyle(runtimeStatusColor(status))
+                    .clipShape(Capsule())
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                infoBlock("CLI", value: status?.executablePath ?? (status?.installed == true ? "已安装但未检测到 CLI" : "未检测到"))
+                infoBlock("Server", value: status.map { "\($0.serverHost) · \($0.serverRunning ? "在线" : "离线")" } ?? "-")
+                infoBlock("模型目录", value: status?.modelsDirHint ?? "-")
+            }
+
+            HStack {
+                Button("官方下载") {
+                    controller.openRuntimeDownloadPage(runtime)
+                }
+                .buttonStyle(.bordered)
+
+                Button(controller.isRuntimeActionBusy(runtime, action: .startServer) ? "启动中..." : "启动 Server") {
+                    controller.runRuntimeAction(runtime, action: .startServer)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!controller.isRunning || controller.isRuntimeActionBusy(runtime, action: .startServer))
+
+                Button(controller.isRuntimeActionBusy(runtime, action: .downloadModel) ? "下载中..." : "下载当前模型") {
+                    controller.runRuntimeAction(runtime, action: .downloadModel)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!controller.isRunning || controller.isRuntimeActionBusy(runtime, action: .downloadModel))
+
+                if runtime == .lmstudio {
+                    Button(controller.isRuntimeActionBusy(runtime, action: .loadModel) ? "加载中..." : "加载当前模型") {
+                        controller.runRuntimeAction(runtime, action: .loadModel)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!controller.isRunning || controller.isRuntimeActionBusy(runtime, action: .loadModel))
+                }
+
+                Button(controller.isRuntimeActionBusy(runtime, action: .unloadModel) ? "卸载中..." : "卸载当前模型") {
+                    controller.runRuntimeAction(runtime, action: .unloadModel)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!controller.isRunning || controller.isRuntimeActionBusy(runtime, action: .unloadModel))
+
+                if runtime == .ollama {
+                    Button(controller.isRuntimeActionBusy(runtime, action: .removeModel) ? "删除中..." : "删除当前模型") {
+                        controller.runRuntimeAction(runtime, action: .removeModel)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!controller.isRunning || controller.isRuntimeActionBusy(runtime, action: .removeModel))
+                }
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                bulletBlock("已下载模型", items: status?.downloadedModels.map { model in
+                    if let identifier = model.identifier, !identifier.isEmpty {
+                        return "\(model.label) (\(identifier))"
+                    }
+                    return model.label
+                } ?? [])
+
+                bulletBlock("已加载模型", items: status?.loadedModels.map { model in
+                    if let identifier = model.identifier, !identifier.isEmpty {
+                        return "\(model.label) (\(identifier))"
+                    }
+                    return model.label
+                } ?? [])
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("最近任务")
+                    .font(.headline)
+                Text(latestJob.map { "\($0.summary) · \($0.updatedAt)" } ?? "还没有执行过任务。")
+                    .foregroundStyle(.secondary)
+                ScrollView {
+                    Text((latestJob?.logs.isEmpty == false ? latestJob!.logs.joined(separator: "\n") : "-"))
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                }
+                .frame(minHeight: 120)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(nsColor: .textBackgroundColor))
+                )
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
     }
 
     private func errorBanner(_ message: String) -> some View {
@@ -554,5 +720,31 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
             )
+    }
+
+    private func runtimeStatusLabel(_ status: DesktopLocalRuntimeStatus?) -> String {
+        guard let status else { return "未检查" }
+        if !status.installed { return "未安装" }
+        return status.serverRunning ? "在线" : "已安装"
+    }
+
+    private func runtimeStatusColor(_ status: DesktopLocalRuntimeStatus?) -> Color {
+        guard let status else { return .secondary }
+        if !status.installed { return .orange }
+        return status.serverRunning ? .green : .secondary
+    }
+
+    private func runtimeCopy(runtime: DesktopLocalRuntimeSlug, status: DesktopLocalRuntimeStatus?) -> String {
+        guard let status else {
+            return "等待刷新运行时状态。"
+        }
+
+        if !status.installed {
+            return "\(runtime.displayName) 尚未检测到。先走官方下载，再回来启动 server、下载并加载当前配置模型 \(controller.localVisionModel)。"
+        }
+
+        let prefix = status.serverRunning ? "已检测到安装，server 当前在线。" : "已检测到安装，但 server 当前离线。"
+        let note = status.notes.first ?? ""
+        return "\(prefix) 当前配置模型是 \(controller.localVisionModel)。\(note)"
     }
 }

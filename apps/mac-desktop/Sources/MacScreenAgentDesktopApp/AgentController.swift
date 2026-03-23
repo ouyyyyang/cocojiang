@@ -16,12 +16,17 @@ final class AgentController: ObservableObject {
     @Published var isSubmittingAnalysis = false
     @Published var isRefreshingState = false
 
+    @Published var modelProvider: DesktopModelProvider = .codex
     @Published var codexModel = "gpt-5.4"
+    @Published var localVisionModel = "qwen3-vl:8b"
     @Published var isSavingSettings = false
     @Published var authStatusText = "未检查"
     @Published var authDetailText = "本机 Codex 认证状态会显示在这里。"
     @Published var isRefreshingAuth = false
     @Published var isStartingAuth = false
+    @Published var localRuntimeStatus: DesktopLocalRuntimeStatusResponse?
+    @Published var isRefreshingLocalRuntimes = false
+    @Published var runtimeActionBusyKey: String?
 
     @Published var captureTestImage: NSImage?
     @Published var captureTestTimestamp = "-"
@@ -58,6 +63,38 @@ final class AgentController: ObservableObject {
     private var logHandle: FileHandle?
     private var didAutoStart = false
     private var bootstrapTask: Task<Void, Never>?
+
+    var activeModelDisplayName: String {
+        switch modelProvider {
+        case .codex:
+            return codexModel
+        case .lmstudio:
+            return localVisionModel
+        case .ollama:
+            return localVisionModel
+        }
+    }
+
+    var activeModelSummary: String {
+        "\(modelProvider.displayName) · \(activeModelDisplayName)"
+    }
+
+    func runtimeStatus(for runtime: DesktopLocalRuntimeSlug) -> DesktopLocalRuntimeStatus? {
+        switch runtime {
+        case .lmstudio:
+            return localRuntimeStatus?.runtimes.lmstudio
+        case .ollama:
+            return localRuntimeStatus?.runtimes.ollama
+        }
+    }
+
+    func latestRuntimeJob(for runtime: DesktopLocalRuntimeSlug) -> DesktopLocalRuntimeJob? {
+        localRuntimeStatus?.jobs.first(where: { $0.runtime == runtime })
+    }
+
+    func isRuntimeActionBusy(_ runtime: DesktopLocalRuntimeSlug, action: DesktopLocalRuntimeAction) -> Bool {
+        runtimeActionBusyKey == runtimeActionKey(runtime: runtime, action: action)
+    }
 
     init() {
         repositoryRoot = Self.resolveRepositoryRoot()
@@ -193,7 +230,8 @@ final class AgentController: ObservableObject {
                 async let settingsTask: Void = refreshSettings()
                 async let authTask: Void = refreshAuthStatus()
                 async let historyTask: Void = refreshSessions()
-                _ = try await (settingsTask, authTask, historyTask)
+                async let runtimeTask: Void = refreshLocalRuntimeStatus()
+                _ = try await (settingsTask, authTask, historyTask, runtimeTask)
             } catch {
                 await MainActor.run {
                     self.present(error: error)
@@ -215,10 +253,16 @@ final class AgentController: ObservableObject {
             }
 
             do {
-                let body = try jsonData(["codexModel": codexModel])
+                let body = try jsonData([
+                    "modelProvider": modelProvider.rawValue,
+                    "codexModel": codexModel,
+                    "localVisionModel": localVisionModel
+                ])
                 let settings: DesktopSettings = try await requestJSON(path: "/api/settings", method: "POST", body: body)
                 await MainActor.run {
+                    self.modelProvider = settings.modelProvider
                     self.codexModel = settings.codexModel
+                    self.localVisionModel = settings.localVisionModel
                     self.statusText = "已保存模型配置"
                 }
             } catch {
@@ -359,6 +403,7 @@ final class AgentController: ObservableObject {
                 let response: DesktopModelTestResponse = try await requestJSON(path: "/api/test/model", method: "POST", body: body)
                 let image = try await loadImage(path: response.imageUrl)
                 await MainActor.run {
+                    self.modelProvider = response.modelProvider
                     self.modelTestImage = image
                     self.modelTestTimestamp = self.format(dateString: response.capturedAt)
                     self.modelTestSummary = response.result.summary
@@ -367,7 +412,7 @@ final class AgentController: ObservableObject {
                     self.modelTestNextActions = response.result.nextActions
                     self.modelTestUncertainties = response.result.uncertainties
                     self.modelTestRawOutput = self.prettyJSON(response.rawMessage)
-                    self.statusText = "模型测试完成"
+                    self.statusText = "\(response.modelProvider.displayName) 模型测试完成"
                 }
             } catch {
                 await MainActor.run {
@@ -420,8 +465,57 @@ final class AgentController: ObservableObject {
     }
 
     func openInBrowser() {
-        guard let url = currentURL else { return }
+        guard let url = URL(string: "/mac", relativeTo: currentURL)?.absoluteURL else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    func openRuntimeDownloadPage(_ runtime: DesktopLocalRuntimeSlug) {
+        let rawURL = runtime == .lmstudio ? "https://lmstudio.ai/" : "https://ollama.com/download"
+        guard let url = URL(string: rawURL) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    func runRuntimeAction(_ runtime: DesktopLocalRuntimeSlug, action: DesktopLocalRuntimeAction) {
+        Task {
+            guard isRunning else { return }
+            await MainActor.run {
+                self.runtimeActionBusyKey = self.runtimeActionKey(runtime: runtime, action: action)
+                self.lastError = nil
+                self.statusText = "\(runtime.displayName) 正在\(action.displayName)"
+            }
+
+            defer {
+                Task { @MainActor in
+                    self.runtimeActionBusyKey = nil
+                }
+            }
+
+            do {
+                let body: Data?
+                if action == .startServer {
+                    body = nil
+                } else {
+                    body = try jsonData([
+                        "model": localVisionModel,
+                        "identifier": localVisionModel
+                    ])
+                }
+
+                let job: DesktopLocalRuntimeJob = try await requestJSON(
+                    path: runtimeActionPath(runtime: runtime, action: action),
+                    method: "POST",
+                    body: body
+                )
+                await MainActor.run {
+                    self.statusText = job.summary
+                }
+                try await pollRuntimeJob(job.id)
+            } catch {
+                await MainActor.run {
+                    self.present(error: error, status: "\(runtime.displayName) 任务失败")
+                }
+            }
+        }
     }
 
     func openLogsFolder() {
@@ -446,6 +540,29 @@ final class AgentController: ObservableObject {
 
     private var currentURL: URL? {
         URL(string: serviceURLText)
+    }
+
+    private func runtimeActionPath(runtime: DesktopLocalRuntimeSlug, action: DesktopLocalRuntimeAction) -> String {
+        switch (runtime, action) {
+        case (.lmstudio, .startServer):
+            return "/api/local-runtimes/lmstudio/server/start"
+        case (.lmstudio, .downloadModel):
+            return "/api/local-runtimes/lmstudio/download-model"
+        case (.lmstudio, .loadModel):
+            return "/api/local-runtimes/lmstudio/load-model"
+        case (.lmstudio, .unloadModel):
+            return "/api/local-runtimes/lmstudio/unload-model"
+        case (.ollama, .startServer):
+            return "/api/local-runtimes/ollama/server/start"
+        case (.ollama, .downloadModel):
+            return "/api/local-runtimes/ollama/pull-model"
+        case (.ollama, .unloadModel):
+            return "/api/local-runtimes/ollama/unload-model"
+        case (.ollama, .removeModel):
+            return "/api/local-runtimes/ollama/remove-model"
+        case (.ollama, .loadModel), (.lmstudio, .removeModel):
+            return ""
+        }
     }
 
     private func prepareLogs() {
@@ -511,7 +628,8 @@ final class AgentController: ObservableObject {
             async let settingsTask: Void = refreshSettings()
             async let authTask: Void = refreshAuthStatus()
             async let historyTask: Void = refreshSessions()
-            _ = try await (settingsTask, authTask, historyTask)
+            async let runtimeTask: Void = refreshLocalRuntimeStatus()
+            _ = try await (settingsTask, authTask, historyTask, runtimeTask)
         } catch {
             present(error: error)
         }
@@ -520,7 +638,26 @@ final class AgentController: ObservableObject {
     private func refreshSettings() async throws {
         let settings: DesktopSettings = try await requestJSON(path: "/api/settings")
         await MainActor.run {
+            self.modelProvider = settings.modelProvider
             self.codexModel = settings.codexModel
+            self.localVisionModel = settings.localVisionModel
+        }
+    }
+
+    private func refreshLocalRuntimeStatus() async throws {
+        await MainActor.run {
+            self.isRefreshingLocalRuntimes = true
+        }
+
+        defer {
+            Task { @MainActor in
+                self.isRefreshingLocalRuntimes = false
+            }
+        }
+
+        let response: DesktopLocalRuntimeStatusResponse = try await requestJSON(path: "/api/local-runtimes/status")
+        await MainActor.run {
+            self.localRuntimeStatus = response
         }
     }
 
@@ -537,6 +674,49 @@ final class AgentController: ObservableObject {
             self.selectedSession = record
             self.selectedSessionImage = image
         }
+    }
+
+    private func pollRuntimeJob(_ jobID: String) async throws {
+        for _ in 0..<120 {
+            let job: DesktopLocalRuntimeJob = try await requestJSON(path: "/api/local-runtimes/jobs/\(jobID)")
+            await MainActor.run {
+                self.mergeRuntimeJob(job)
+            }
+
+            if job.status != "running" {
+                try await refreshLocalRuntimeStatus()
+                await MainActor.run {
+                    self.statusText = job.summary
+                }
+                if job.status == "error" {
+                    throw ControllerError.remote(job.error ?? job.summary)
+                }
+                return
+            }
+
+            try await Task.sleep(for: .milliseconds(1500))
+        }
+
+        throw ControllerError.remote("运行时任务轮询超时。")
+    }
+
+    private func mergeRuntimeJob(_ job: DesktopLocalRuntimeJob) {
+        guard var snapshot = localRuntimeStatus else {
+            return
+        }
+
+        if let index = snapshot.jobs.firstIndex(where: { $0.id == job.id }) {
+            snapshot.jobs[index] = job
+        } else {
+            snapshot.jobs.insert(job, at: 0)
+            snapshot.jobs = Array(snapshot.jobs.prefix(12))
+        }
+
+        localRuntimeStatus = snapshot
+    }
+
+    private func runtimeActionKey(runtime: DesktopLocalRuntimeSlug, action: DesktopLocalRuntimeAction) -> String {
+        "\(runtime.rawValue):\(action.rawValue)"
     }
 
     private func requestJSON<T: Decodable>(
@@ -707,10 +887,22 @@ final class AgentController: ObservableObject {
             return "没有找到 Codex CLI。请确认 `codex` 已安装，并且在终端执行 `command -v codex` 可以返回路径。"
         }
 
+        if message.contains("Failed to reach LM Studio") || message.contains("connect ECONNREFUSED 127.0.0.1:1234") {
+            return "没有连接到 LM Studio。本机先启动 LM Studio，执行 `lms server start`，再把目标模型加载为当前使用的标识，例如 `qwen3-vl:8b`。"
+        }
+
+        if message.contains("Failed to reach Ollama") || message.contains("ECONNREFUSED") || message.contains("connect ECONNREFUSED 127.0.0.1:11434") {
+            return "没有连接到本地 Ollama。请先启动 Ollama，并确认 `ollama serve` 正在运行，随后执行 `ollama pull qwen3-vl:8b`。"
+        }
+
+        if message.contains("没有检测到 LM Studio CLI") || message.contains("没有检测到 Ollama CLI") {
+            return message
+        }
+
         return message.isEmpty ? "发生未知错误。" : message
     }
 
-    private func jsonData(_ object: [String: String]) throws -> Data {
+    private func jsonData(_ object: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: object, options: [])
     }
 

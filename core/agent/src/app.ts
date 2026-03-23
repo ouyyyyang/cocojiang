@@ -7,12 +7,16 @@ import { resolveConfig } from "./config.js";
 import { captureScreen, type SimpleCommandRunner } from "./capture.js";
 import { launchCodexLoginInTerminal, readCodexLoginStatus, type LaunchCodexLogin } from "./codex-login.js";
 import { runCodexAnalysis, type SpawnProcess } from "./codex.js";
-import { loadCodexModelCatalog } from "./model-catalog.js";
+import { LocalRuntimeManager, type LocalRuntimeManagerLike } from "./local-runtime-manager.js";
+import { runLmStudioVisionAnalysis } from "./lmstudio-vision.js";
+import { runOllamaVisionAnalysis } from "./local-vision.js";
+import { loadCodexModelCatalog, loadLocalVisionModelCatalog, loadModelProviderCatalog } from "./model-catalog.js";
 import { SessionStore } from "./session-store.js";
-import { SettingsStore, sanitizeCodexModel } from "./settings-store.js";
+import { SettingsStore } from "./settings-store.js";
 import type {
   AgentConfigPayload,
   CaptureTarget,
+  ModelProvider,
   SessionRecord,
   SessionStatus,
   SupportedCaptureTarget
@@ -50,6 +54,7 @@ export async function createAgentServer(input?: {
   captureCommandRunner?: SimpleCommandRunner;
   spawnProcess?: SpawnProcess;
   launchCodexLogin?: LaunchCodexLogin;
+  localRuntimeManager?: LocalRuntimeManagerLike;
   logger?: Pick<Console, "log" | "error">;
 }): Promise<AgentServer> {
   const config = input?.config ?? resolveConfig();
@@ -58,9 +63,20 @@ export async function createAgentServer(input?: {
   const store = input?.store ?? new SessionStore(config);
   const settingsStore = input?.settingsStore ?? new SettingsStore(config);
   const availableModels = await loadCodexModelCatalog(config.codexModelsCachePath);
+  const localVisionModels = loadLocalVisionModelCatalog();
+  const availableProviders = loadModelProviderCatalog();
   const logger = input?.logger ?? console;
   const pairingToken = await store.initialize(config.pairingTokenEnv);
   const initialSettings = await settingsStore.initialize();
+  const localRuntimeManager =
+    input?.localRuntimeManager ??
+    new LocalRuntimeManager({
+      workspaceRoot: config.workspaceRoot,
+      lmStudioBin: config.lmStudioBin,
+      ollamaBin: config.ollamaBin,
+      lmStudioHost: config.lmStudioHost,
+      ollamaHost: config.ollamaHost
+    });
 
   const hubState: {
     hub?: WebSocketHub;
@@ -73,6 +89,8 @@ export async function createAgentServer(input?: {
         store,
         settingsStore,
         availableModels,
+        localVisionModels,
+        availableProviders,
         initialSettings,
         pairingToken,
         request,
@@ -80,7 +98,8 @@ export async function createAgentServer(input?: {
         hubState,
         captureCommandRunner: input?.captureCommandRunner,
         spawnProcess: input?.spawnProcess,
-        launchCodexLogin: input?.launchCodexLogin
+        launchCodexLogin: input?.launchCodexLogin,
+        localRuntimeManager
       });
     } catch (error) {
       logger.error(error);
@@ -90,7 +109,7 @@ export async function createAgentServer(input?: {
 
   hubState.hub = attachWebSocketServer(server, {
     path: "/ws",
-    verifyToken: (token) => Boolean(token) && safeTokenEqual(pairingToken, token!)
+    verifyRequest: (request, token) => isAuthorized(request, pairingToken, token)
   });
 
   return {
@@ -124,6 +143,7 @@ export async function createAgentServer(input?: {
 
     async close() {
       hubState.hub?.close();
+      await localRuntimeManager.close();
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {
@@ -143,7 +163,9 @@ async function routeRequest(input: {
   store: SessionStore;
   settingsStore: SettingsStore;
   availableModels: AgentConfigPayload["codexModels"];
-  initialSettings: { codexModel: string };
+  localVisionModels: AgentConfigPayload["localVisionModels"];
+  availableProviders: AgentConfigPayload["modelProviders"];
+  initialSettings: { modelProvider: ModelProvider; codexModel: string; localVisionModel: string };
   pairingToken: string;
   request: IncomingMessage;
   response: ServerResponse;
@@ -151,6 +173,7 @@ async function routeRequest(input: {
   captureCommandRunner?: SimpleCommandRunner;
   spawnProcess?: SpawnProcess;
   launchCodexLogin?: LaunchCodexLogin;
+  localRuntimeManager: LocalRuntimeManagerLike;
 }): Promise<void> {
   const method = input.request.method || "GET";
   const url = new URL(input.request.url || "/", "http://localhost");
@@ -170,9 +193,13 @@ async function routeRequest(input: {
       },
       defaults: {
         captureTarget: "main_display",
-        codexModel: input.initialSettings.codexModel
+        modelProvider: input.initialSettings.modelProvider,
+        codexModel: input.initialSettings.codexModel,
+        localVisionModel: input.initialSettings.localVisionModel
       },
-      codexModels: input.availableModels
+      modelProviders: input.availableProviders,
+      codexModels: input.availableModels,
+      localVisionModels: input.localVisionModels
     };
 
     sendJson(input.response, 200, payload);
@@ -211,7 +238,8 @@ async function routeRequest(input: {
       const session = await input.store.createSession({
         question: (body.question || "").trim(),
         captureTarget,
-        codexModel: settings.codexModel
+        modelProvider: settings.modelProvider,
+        codexModel: resolveSelectedModel(settings)
       });
 
       input.hubState.hub?.broadcast({
@@ -226,7 +254,8 @@ async function routeRequest(input: {
         hub: input.hubState.hub,
         sessionId: session.id,
         captureTarget,
-        codexModel: settings.codexModel,
+        modelProvider: settings.modelProvider,
+        modelName: resolveSelectedModel(settings),
         question: session.question,
         captureCommandRunner: input.captureCommandRunner,
         spawnProcess: input.spawnProcess
@@ -249,18 +278,157 @@ async function routeRequest(input: {
     }
 
     if (method === "POST" && pathname === "/api/settings") {
-      const body = await readJsonBody<{ codexModel?: string }>(input.request);
-      const nextModel = sanitizeCodexModel(body.codexModel, "");
+      const body = await readJsonBody<{
+        modelProvider?: ModelProvider;
+        codexModel?: string;
+        localVisionModel?: string;
+      }>(input.request);
 
-      if (!nextModel) {
-        sendJson(input.response, 400, { error: "codexModel is required" });
+      const settings = await input.settingsStore.saveSettings({
+        modelProvider: body.modelProvider,
+        codexModel: body.codexModel,
+        localVisionModel: body.localVisionModel
+      });
+      sendJson(input.response, 200, settings);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/local-runtimes/status") {
+      sendJson(input.response, 200, await input.localRuntimeManager.getStatus());
+      return;
+    }
+
+    if (method === "GET" && pathname.startsWith("/api/local-runtimes/jobs/")) {
+      const jobId = pathname.split("/")[4];
+      const job = await input.localRuntimeManager.getJob(jobId);
+      if (!job) {
+        sendJson(input.response, 404, { error: "Runtime job not found" });
         return;
       }
 
-      const settings = await input.settingsStore.saveSettings({
-        codexModel: nextModel
-      });
-      sendJson(input.response, 200, settings);
+      sendJson(input.response, 200, job);
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/lmstudio/server/start") {
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "lmstudio",
+          action: "start_server"
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/lmstudio/download-model") {
+      const body = await readJsonBody<{ model?: string }>(input.request);
+      const settings = await input.settingsStore.getSettings();
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "lmstudio",
+          action: "download_model",
+          modelSlug: (body.model || settings.localVisionModel).trim()
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/lmstudio/load-model") {
+      const body = await readJsonBody<{ model?: string; identifier?: string }>(input.request);
+      const settings = await input.settingsStore.getSettings();
+      const modelSlug = (body.model || settings.localVisionModel).trim();
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "lmstudio",
+          action: "load_model",
+          modelSlug,
+          identifier: (body.identifier || modelSlug).trim()
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/lmstudio/unload-model") {
+      const body = await readJsonBody<{ model?: string; identifier?: string }>(input.request);
+      const settings = await input.settingsStore.getSettings();
+      const modelSlug = (body.model || settings.localVisionModel).trim();
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "lmstudio",
+          action: "unload_model",
+          modelSlug,
+          identifier: (body.identifier || modelSlug).trim()
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/ollama/server/start") {
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "ollama",
+          action: "start_server"
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/ollama/pull-model") {
+      const body = await readJsonBody<{ model?: string }>(input.request);
+      const settings = await input.settingsStore.getSettings();
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "ollama",
+          action: "download_model",
+          modelSlug: (body.model || settings.localVisionModel).trim()
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/ollama/unload-model") {
+      const body = await readJsonBody<{ model?: string }>(input.request);
+      const settings = await input.settingsStore.getSettings();
+      const modelSlug = (body.model || settings.localVisionModel).trim();
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "ollama",
+          action: "unload_model",
+          modelSlug,
+          identifier: modelSlug
+        })
+      );
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/local-runtimes/ollama/remove-model") {
+      const body = await readJsonBody<{ model?: string }>(input.request);
+      const settings = await input.settingsStore.getSettings();
+      const modelSlug = (body.model || settings.localVisionModel).trim();
+      sendJson(
+        input.response,
+        202,
+        await input.localRuntimeManager.runOperation({
+          runtime: "ollama",
+          action: "remove_model",
+          modelSlug,
+          identifier: modelSlug
+        })
+      );
       return;
     }
 
@@ -334,22 +502,26 @@ async function routeRequest(input: {
         runCommand: input.captureCommandRunner
       });
 
-      const analysis = await runCodexAnalysis({
+      const selectedModel = resolveSelectedModel(settings);
+      const analysisResult = await runConfiguredAnalysis({
         config: input.config,
         imagePath,
         question,
         captureTarget: "main_display",
-        codexModel: settings.codexModel,
-        spawnProcess: input.spawnProcess
+        modelProvider: settings.modelProvider,
+        modelName: selectedModel,
+        spawnProcess: input.spawnProcess,
+        onProgress: undefined
       });
 
       const payload = {
         capturedAt: nowIso(),
         question,
-        codexModel: settings.codexModel,
+        modelProvider: settings.modelProvider,
+        codexModel: selectedModel,
         imageUrl: "/api/test/model/image",
-        result: analysis.result,
-        rawMessage: analysis.rawMessage
+        result: analysisResult.result,
+        rawMessage: analysisResult.rawMessage
       };
 
       await fs.writeFile(manualModelResultPath(input.config), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
@@ -407,7 +579,7 @@ async function routeRequest(input: {
   }
 
   if (method === "GET") {
-    await serveStatic(input.response, input.config.publicDir, pathname);
+    await serveStatic(input.response, input.config, pathname);
     return;
   }
 
@@ -420,7 +592,8 @@ async function processAnalysisSession(input: {
   hub?: WebSocketHub;
   sessionId: string;
   captureTarget: SupportedCaptureTarget;
-  codexModel: string;
+  modelProvider: ModelProvider;
+  modelName: string;
   question: string;
   captureCommandRunner?: SimpleCommandRunner;
   spawnProcess?: SpawnProcess;
@@ -442,14 +615,25 @@ async function processAnalysisSession(input: {
       record.imagePath = imagePath;
     });
 
-    await transitionSession(input.store, input.hub, input.sessionId, "analyzing", "Submitting screenshot to Codex");
+    await transitionSession(
+      input.store,
+      input.hub,
+      input.sessionId,
+      "analyzing",
+      input.modelProvider === "lmstudio"
+        ? "Submitting screenshot to LM Studio"
+        : input.modelProvider === "ollama"
+          ? "Submitting screenshot to local Ollama model"
+          : "Submitting screenshot to Codex"
+    );
 
-    const analysis = await runCodexAnalysis({
+    const analysis = await runConfiguredAnalysis({
       config: input.config,
       imagePath,
       question: input.question,
       captureTarget: input.captureTarget,
-      codexModel: input.codexModel,
+      modelProvider: input.modelProvider,
+      modelName: input.modelName,
       spawnProcess: input.spawnProcess,
       onProgress: async (message) => {
         await transitionSession(input.store, input.hub, input.sessionId, "analyzing", message);
@@ -491,7 +675,15 @@ async function transitionSession(
   });
 }
 
-function isAuthorized(request: IncomingMessage, pairingToken: string): boolean {
+function isAuthorized(request: IncomingMessage, pairingToken: string, websocketToken?: string | null): boolean {
+  if (isLoopbackRequest(request)) {
+    return true;
+  }
+
+  if (typeof websocketToken === "string") {
+    return websocketToken.length > 0 && safeTokenEqual(pairingToken, websocketToken);
+  }
+
   const header = request.headers.authorization;
   if (!header || !header.startsWith("Bearer ")) {
     return false;
@@ -500,15 +692,75 @@ function isAuthorized(request: IncomingMessage, pairingToken: string): boolean {
   return safeTokenEqual(pairingToken, header.slice("Bearer ".length));
 }
 
-async function serveStatic(response: ServerResponse, publicDir: string, pathname: string): Promise<void> {
-  const normalizedPath = pathname === "/" ? "/index.html" : pathname;
+function isLoopbackRequest(request: IncomingMessage): boolean {
+  const remoteAddress = request.socket.remoteAddress || "";
+  return remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress.startsWith("::ffff:127.");
+}
+
+function resolveSelectedModel(settings: { modelProvider: ModelProvider; codexModel: string; localVisionModel: string }): string {
+  return settings.modelProvider === "codex" ? settings.codexModel : settings.localVisionModel;
+}
+
+async function runConfiguredAnalysis(input: {
+  config: AppConfig;
+  imagePath: string;
+  question: string;
+  captureTarget: CaptureTarget;
+  modelProvider: ModelProvider;
+  modelName: string;
+  spawnProcess?: SpawnProcess;
+  onProgress?: (message: string) => void | Promise<void>;
+}) {
+  if (input.modelProvider === "ollama") {
+    return await runOllamaVisionAnalysis({
+      config: input.config,
+      imagePath: input.imagePath,
+      question: input.question,
+      captureTarget: input.captureTarget,
+      localVisionModel: input.modelName,
+      onProgress: input.onProgress
+    });
+  }
+
+  if (input.modelProvider === "lmstudio") {
+    return await runLmStudioVisionAnalysis({
+      config: input.config,
+      imagePath: input.imagePath,
+      question: input.question,
+      captureTarget: input.captureTarget,
+      localVisionModel: input.modelName,
+      onProgress: input.onProgress
+    });
+  }
+
+  return await runCodexAnalysis({
+    config: input.config,
+    imagePath: input.imagePath,
+    question: input.question,
+    captureTarget: input.captureTarget,
+    codexModel: input.modelName,
+    spawnProcess: input.spawnProcess,
+    onProgress: input.onProgress
+  });
+}
+
+async function serveStatic(
+  response: ServerResponse,
+  config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir">,
+  pathname: string
+): Promise<void> {
+  const target = resolveStaticTarget(config, pathname);
+  const normalizedPath = target.path;
   const sanitized = normalize(normalizedPath)
     .replace(/^[/\\]+/, "")
     .replace(/^(\.\.(\/|\\|$))+/, "");
-  const filePath = join(publicDir, sanitized);
+  let filePath = join(target.publicDir, sanitized);
 
-  if (!(await pathExists(filePath))) {
-    const fallback = join(publicDir, "index.html");
+  const resolvedPath = await resolveStaticFilePath(filePath);
+  if (resolvedPath) {
+    filePath = resolvedPath;
+  } else {
+    const fallback = join(target.publicDir, "index.html");
     const html = await fs.readFile(fallback, "utf8");
     sendResponse(response, 200, html, {
       "content-type": "text/html; charset=utf-8",
@@ -554,6 +806,38 @@ function sendResponse(
 ): void {
   response.writeHead(statusCode, headers);
   response.end(body);
+}
+
+function resolveStaticTarget(
+  config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir">,
+  pathname: string
+): { publicDir: string; path: string } {
+  if (pathname === "/mac" || pathname.startsWith("/mac/")) {
+    const relativePath = pathname === "/mac" ? "/" : pathname.slice("/mac".length) || "/";
+    return {
+      publicDir: config.macWebPublicDir,
+      path: relativePath === "/" ? "/index.html" : relativePath
+    };
+  }
+
+  return {
+    publicDir: config.iphonePublicDir,
+    path: pathname === "/" ? "/index.html" : pathname
+  };
+}
+
+async function resolveStaticFilePath(filePath: string): Promise<string | null> {
+  if (!(await pathExists(filePath))) {
+    return null;
+  }
+
+  const stats = await fs.stat(filePath);
+  if (stats.isDirectory()) {
+    const directoryIndexPath = join(filePath, "index.html");
+    return (await pathExists(directoryIndexPath)) ? directoryIndexPath : null;
+  }
+
+  return filePath;
 }
 
 function manualTestsDir(config: Pick<AppConfig, "dataDir">): string {

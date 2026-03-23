@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import type { AppConfig } from "./config.js";
-import type { CaptureTarget, SessionEvent, SessionRecord, SessionStatus, SessionSummary } from "./types.js";
+import type {
+  CaptureTarget,
+  ModelProvider,
+  SessionEvent,
+  SessionRecord,
+  SessionStatus,
+  SessionSummary
+} from "./types.js";
 import { ensureDir, generatePairingToken, nowIso, pathExists, readJsonFile, writeJsonAtomic } from "./utils.js";
 
 export class SessionStore {
@@ -35,6 +42,7 @@ export class SessionStore {
   async createSession(input: {
     question: string;
     captureTarget: CaptureTarget;
+    modelProvider: ModelProvider;
     codexModel: string;
   }): Promise<SessionRecord> {
     const id = randomUUID();
@@ -44,6 +52,7 @@ export class SessionStore {
       id,
       question: input.question,
       captureTarget: input.captureTarget,
+      modelProvider: input.modelProvider,
       codexModel: input.codexModel,
       status: "queued",
       createdAt: timestamp,
@@ -91,6 +100,7 @@ export class SessionStore {
           id: session.id,
           question: session.question,
           captureTarget: session.captureTarget,
+          modelProvider: session.modelProvider,
           codexModel: session.codexModel,
           status: session.status,
           createdAt: session.createdAt,

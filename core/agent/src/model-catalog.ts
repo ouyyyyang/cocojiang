@@ -1,4 +1,4 @@
-import type { CodexModelOption } from "./types.js";
+import type { CodexModelOption, LocalVisionModelCatalogEntry, ModelProviderOption } from "./types.js";
 import { pathExists, readJsonFile } from "./utils.js";
 
 const FALLBACK_MODELS: CodexModelOption[] = [
@@ -49,6 +49,51 @@ export async function loadCodexModelCatalog(cachePath: string): Promise<CodexMod
   } catch {
     return FALLBACK_MODELS;
   }
+}
+
+const LOCAL_VISION_MODELS: LocalVisionModelCatalogEntry[] = [
+  {
+    slug: "qwen3-vl:4b",
+    displayName: "qwen3-vl:4b",
+    description: "Smaller local vision-language model via Ollama.",
+    lmStudioQuery: "qwen3-vl-4b",
+    ollamaModel: "qwen3-vl:4b"
+  },
+  {
+    slug: "qwen3-vl:8b",
+    displayName: "qwen3-vl:8b",
+    description: "Recommended local vision-language model on Apple Silicon when you want stronger quality.",
+    lmStudioQuery: "qwen3-vl-8b",
+    ollamaModel: "qwen3-vl:8b"
+  }
+];
+
+export function loadLocalVisionModelCatalog(): CodexModelOption[] {
+  return LOCAL_VISION_MODELS;
+}
+
+export function getLocalVisionModelSpec(slug: string): LocalVisionModelCatalogEntry | undefined {
+  return LOCAL_VISION_MODELS.find((model) => model.slug === slug);
+}
+
+export function loadModelProviderCatalog(): ModelProviderOption[] {
+  return [
+    {
+      slug: "codex",
+      displayName: "Codex",
+      description: "Cloud Codex CLI execution."
+    },
+    {
+      slug: "lmstudio",
+      displayName: "LM Studio (MLX)",
+      description: "Local Apple Silicon optimized inference through LM Studio."
+    },
+    {
+      slug: "ollama",
+      displayName: "Local Ollama",
+      description: "Local vision-language inference through Ollama."
+    }
+  ];
 }
 
 function dedupeBySlug(models: CodexModelOption[]): CodexModelOption[] {

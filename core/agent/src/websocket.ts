@@ -20,7 +20,7 @@ export function attachWebSocketServer(
   server: HttpServer,
   input: {
     path: string;
-    verifyToken: (token: string | null) => boolean;
+    verifyRequest: (request: IncomingMessage, token: string | null) => boolean;
   }
 ): WebSocketHub {
   const clients = new Map<string, ConnectedClient>();
@@ -34,7 +34,7 @@ export function attachWebSocketServer(
       return;
     }
 
-    if (!input.verifyToken(url.searchParams.get("token"))) {
+    if (!input.verifyRequest(request, url.searchParams.get("token"))) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;

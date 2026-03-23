@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { createAgentServer } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
+import type { LocalRuntimeManagerLike } from "../src/local-runtime-manager.js";
 import { TestWebSocketClient } from "./helpers/websocket-client.js";
 
 class StubProcess extends EventEmitter {
@@ -50,25 +51,99 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     host: "127.0.0.1",
     port: 0,
     workspaceRoot: process.cwd(),
-    publicDir: join(process.cwd(), "apps", "iphone-web", "public"),
+    iphonePublicDir: join(process.cwd(), "apps", "iphone-web", "public"),
+    macWebPublicDir: join(process.cwd(), "apps", "mac-web", "public"),
     schemaPath: join(process.cwd(), "shared", "schemas", "codex-output.schema.json"),
     dataDir,
     sessionsDir: join(dataDir, "sessions"),
     tokenFilePath: join(dataDir, "pairing-token.txt"),
     settingsFilePath: join(dataDir, "settings.json"),
     codexModelsCachePath: join(dataDir, "models_cache.json"),
+    defaultModelProvider: "codex",
     defaultCodexModel: "gpt-5.4",
+    defaultLocalVisionModel: "qwen3-vl:8b",
     codexBin: "codex",
+    lmStudioBin: "lms",
+    ollamaBin: "ollama",
     captureBin: "/usr/sbin/screencapture",
     codexTimeoutMs: 5_000,
+    lmStudioHost: "http://127.0.0.1:1234",
+    ollamaHost: "http://127.0.0.1:11434",
     serviceName: "Test Agent",
     pairingTokenEnv: "test-token"
   };
 
   let launchedCodexLogin = false;
+  const runtimeJobs = new Map<string, any>();
+  let runtimeJobCounter = 0;
+  const localRuntimeManager: LocalRuntimeManagerLike = {
+    async getStatus() {
+      return {
+        runtimes: {
+          lmstudio: {
+            slug: "lmstudio",
+            displayName: "LM Studio (MLX)",
+            installed: true,
+            cliAvailable: true,
+            executablePath: "/usr/local/bin/lms",
+            appDetected: true,
+            appPath: "/Applications/LM Studio.app",
+            installUrl: "https://lmstudio.ai/",
+            serverHost: "http://127.0.0.1:1234",
+            serverRunning: true,
+            modelsDirHint: "~/.lmstudio/models",
+            supportsManagedDelete: false,
+            downloadedModels: [{ id: "qwen/qwen3-vl-8b", label: "Qwen3-VL-8B" }],
+            loadedModels: [{ id: "qwen/qwen3-vl-8b", label: "Qwen3-VL-8B", identifier: "qwen3-vl:8b" }],
+            notes: ["LM Studio runtime managed"]
+          },
+          ollama: {
+            slug: "ollama",
+            displayName: "本地 Ollama",
+            installed: true,
+            cliAvailable: true,
+            executablePath: "/usr/local/bin/ollama",
+            appDetected: true,
+            appPath: "/Applications/Ollama.app",
+            installUrl: "https://ollama.com/download",
+            serverHost: "http://127.0.0.1:11434",
+            serverRunning: false,
+            modelsDirHint: "~/.ollama/models",
+            supportsManagedDelete: true,
+            downloadedModels: [{ id: "qwen3-vl:8b", label: "qwen3-vl:8b" }],
+            loadedModels: [],
+            notes: ["Ollama runtime managed"]
+          }
+        },
+        jobs: Array.from(runtimeJobs.values())
+      };
+    },
+    async getJob(jobId) {
+      return runtimeJobs.get(jobId) ?? null;
+    },
+    async runOperation(input) {
+      runtimeJobCounter += 1;
+      const job = {
+        id: `job-${runtimeJobCounter}`,
+        runtime: input.runtime,
+        action: input.action,
+        modelSlug: input.modelSlug,
+        identifier: input.identifier,
+        status: "done" as const,
+        summary: `${input.runtime}:${input.action}:done`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        logs: [`${input.runtime} ${input.action}`]
+      };
+      runtimeJobs.set(job.id, job);
+      return job;
+    },
+    async close() {}
+  };
 
   const agent = await createAgentServer({
     config,
+    localRuntimeManager,
     captureCommandRunner: async (_command, args) => {
       const outputPath = args.at(-1);
       assert.ok(outputPath);
@@ -113,7 +188,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   const baseUrl = `http://127.0.0.1:${port}`;
 
   const unauthorizedResponse = await fetch(`${baseUrl}/api/sessions`);
-  assert.equal(unauthorizedResponse.status, 401);
+  assert.equal(unauthorizedResponse.status, 200);
 
   const pairResponse = await fetch(`${baseUrl}/api/pair`, {
     method: "POST",
@@ -144,6 +219,41 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     })
   });
   assert.equal(saveSettingsResponse.status, 200);
+
+  const runtimeStatusResponse = await fetch(`${baseUrl}/api/local-runtimes/status`, {
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(runtimeStatusResponse.status, 200);
+  const runtimeStatus = await runtimeStatusResponse.json();
+  assert.equal(runtimeStatus.runtimes.lmstudio.serverRunning, true);
+  assert.equal(runtimeStatus.runtimes.ollama.supportsManagedDelete, true);
+
+  const runtimeJobStartResponse = await fetch(`${baseUrl}/api/local-runtimes/lmstudio/download-model`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "qwen3-vl:8b"
+    })
+  });
+  assert.equal(runtimeJobStartResponse.status, 202);
+  const runtimeJob = await runtimeJobStartResponse.json();
+  assert.equal(runtimeJob.runtime, "lmstudio");
+  assert.equal(runtimeJob.action, "download_model");
+
+  const runtimeJobResponse = await fetch(`${baseUrl}/api/local-runtimes/jobs/${runtimeJob.id}`, {
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(runtimeJobResponse.status, 200);
+  const runtimeJobDetail = await runtimeJobResponse.json();
+  assert.equal(runtimeJobDetail.status, "done");
+  assert.equal(runtimeJobDetail.logs[0], "lmstudio download_model");
 
   const authStatusResponse = await fetch(`${baseUrl}/api/codex-auth/status`, {
     headers: {

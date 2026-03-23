@@ -1,10 +1,24 @@
 export const RESERVED_CAPTURE_TARGETS = ["main_display", "frontmost_window"] as const;
 export const SUPPORTED_CAPTURE_TARGETS = ["main_display"] as const;
 export const SESSION_STATUSES = ["queued", "capturing", "analyzing", "done", "error"] as const;
+export const MODEL_PROVIDERS = ["codex", "lmstudio", "ollama"] as const;
+export const LOCAL_RUNTIME_SLUGS = ["lmstudio", "ollama"] as const;
+export const LOCAL_RUNTIME_JOB_STATUSES = ["running", "done", "error"] as const;
+export const LOCAL_RUNTIME_ACTIONS = [
+  "start_server",
+  "download_model",
+  "load_model",
+  "unload_model",
+  "remove_model"
+] as const;
 
 export type CaptureTarget = (typeof RESERVED_CAPTURE_TARGETS)[number];
 export type SupportedCaptureTarget = (typeof SUPPORTED_CAPTURE_TARGETS)[number];
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
+export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
+export type LocalRuntimeSlug = (typeof LOCAL_RUNTIME_SLUGS)[number];
+export type LocalRuntimeJobStatus = (typeof LOCAL_RUNTIME_JOB_STATUSES)[number];
+export type LocalRuntimeAction = (typeof LOCAL_RUNTIME_ACTIONS)[number];
 
 export interface CodexOutput {
   summary: string;
@@ -21,8 +35,21 @@ export interface CodexModelOption {
   description?: string;
 }
 
+export interface LocalVisionModelCatalogEntry extends CodexModelOption {
+  lmStudioQuery: string;
+  ollamaModel: string;
+}
+
+export interface ModelProviderOption {
+  slug: ModelProvider;
+  displayName: string;
+  description?: string;
+}
+
 export interface AgentSettings {
+  modelProvider: ModelProvider;
   codexModel: string;
+  localVisionModel: string;
 }
 
 export interface SessionEvent {
@@ -36,6 +63,7 @@ export interface SessionRecord {
   id: string;
   question: string;
   captureTarget: CaptureTarget;
+  modelProvider: ModelProvider;
   codexModel: string;
   status: SessionStatus;
   createdAt: string;
@@ -53,6 +81,7 @@ export interface SessionSummary {
   id: string;
   question: string;
   captureTarget: CaptureTarget;
+  modelProvider: ModelProvider;
   codexModel: string;
   status: SessionStatus;
   createdAt: string;
@@ -75,7 +104,54 @@ export interface AgentConfigPayload {
   };
   defaults: {
     captureTarget: SupportedCaptureTarget;
+    modelProvider: ModelProvider;
     codexModel: string;
+    localVisionModel: string;
   };
+  modelProviders: ModelProviderOption[];
   codexModels: CodexModelOption[];
+  localVisionModels: CodexModelOption[];
+}
+
+export interface LocalRuntimeModelRef {
+  id: string;
+  label: string;
+  identifier?: string;
+}
+
+export interface LocalRuntimeStatusRecord {
+  slug: LocalRuntimeSlug;
+  displayName: string;
+  installed: boolean;
+  cliAvailable: boolean;
+  executablePath: string | null;
+  appDetected: boolean;
+  appPath: string | null;
+  installUrl: string;
+  serverHost: string;
+  serverRunning: boolean;
+  modelsDirHint: string;
+  supportsManagedDelete: boolean;
+  downloadedModels: LocalRuntimeModelRef[];
+  loadedModels: LocalRuntimeModelRef[];
+  notes: string[];
+}
+
+export interface LocalRuntimeJobRecord {
+  id: string;
+  runtime: LocalRuntimeSlug;
+  action: LocalRuntimeAction;
+  modelSlug?: string;
+  identifier?: string;
+  status: LocalRuntimeJobStatus;
+  summary: string;
+  createdAt: string;
+  updatedAt: string;
+  logs: string[];
+  error?: string;
+}
+
+export interface LocalRuntimeStatusPayload {
+  runtimes: Record<LocalRuntimeSlug, LocalRuntimeStatusRecord>;
+  jobs: LocalRuntimeJobRecord[];
 }
