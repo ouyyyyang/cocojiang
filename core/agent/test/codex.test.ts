@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { EventEmitter } from "node:events";
 import { parseCodexOutput, runCodexAnalysis, validateCodexOutput, type SpawnedProcessLike } from "../src/codex.js";
+import { DEFAULT_ANALYSIS_PROMPT_TEMPLATE } from "../src/prompt.js";
 
 class FakeProcess extends EventEmitter implements SpawnedProcessLike {
   stdin = new PassThrough();
@@ -62,7 +63,9 @@ test("runCodexAnalysis parses final agent message from jsonl", async () => {
     imagePath: "/tmp/screen.png",
     question: "这个报错是什么意思？",
     captureTarget: "main_display",
+    promptTemplate: DEFAULT_ANALYSIS_PROMPT_TEMPLATE,
     codexModel: "gpt-5.4",
+    codexReasoningEffort: "high",
     spawnProcess: () => child,
     onProgress: (message) => {
       progressMessages.push(message);
@@ -104,7 +107,9 @@ test("runCodexAnalysis rejects invalid schema", async () => {
     imagePath: "/tmp/screen.png",
     question: "",
     captureTarget: "main_display",
+    promptTemplate: DEFAULT_ANALYSIS_PROMPT_TEMPLATE,
     codexModel: "gpt-5.4",
+    codexReasoningEffort: "high",
     spawnProcess: () => child
   });
 

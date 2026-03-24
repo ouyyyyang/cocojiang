@@ -15,9 +15,13 @@ const state = {
   sessions: [],
   selectedSession: null,
   localTrusted: isLocalTrustedHost(),
-  localRuntimeStatus: null
+  localRuntimeStatus: null,
+  localConsoleInfo: null,
+  activities: [],
+  defaultPromptTemplate: ""
 };
 const runtimeJobPolls = new Map();
+const CLIENT_HEADER_VALUE = "mac_web";
 
 const pairCard = document.querySelector("#pair-form").closest(".sidebar-card");
 const pairForm = document.querySelector("#pair-form");
@@ -35,6 +39,18 @@ const analyzeForm = document.querySelector("#analyze-form");
 const analyzeButton = document.querySelector("#analyze-button");
 const analysisQuestion = document.querySelector("#analysis-question");
 const dashboardSessionLabel = document.querySelector("#dashboard-session-label");
+const dashboardPairingToken = document.querySelector("#dashboard-pairing-token");
+const dashboardIphoneUrl = document.querySelector("#dashboard-iphone-url");
+const dashboardPhoneUrls = document.querySelector("#dashboard-phone-urls");
+const copyDashboardTokenButton = document.querySelector("#copy-dashboard-token");
+const copyDashboardIphoneUrlButton = document.querySelector("#copy-dashboard-iphone-url");
+const phoneMonitorSource = document.querySelector("#phone-monitor-source");
+const phoneMonitorStatus = document.querySelector("#phone-monitor-status");
+const phoneMonitorUpdatedAt = document.querySelector("#phone-monitor-updated-at");
+const phoneMonitorMessage = document.querySelector("#phone-monitor-message");
+const phoneMonitorQuestion = document.querySelector("#phone-monitor-question");
+const phoneMonitorSession = document.querySelector("#phone-monitor-session");
+const phoneActivityLog = document.querySelector("#phone-activity-log");
 const statusBadge = document.querySelector("#status-badge");
 const statusText = document.querySelector("#status-text");
 const eventLog = document.querySelector("#event-log");
@@ -53,10 +69,15 @@ const detailUncertainties = document.querySelector("#detail-uncertainties");
 const detailError = document.querySelector("#detail-error");
 const modelProviderSelect = document.querySelector("#model-provider");
 const codexModelSelect = document.querySelector("#codex-model");
+const codexReasoningField = document.querySelector("#codex-reasoning-field");
+const codexReasoningEffortSelect = document.querySelector("#codex-reasoning-effort");
 const localModelField = document.querySelector("#local-model-field");
 const localVisionModelSelect = document.querySelector("#local-vision-model");
 const localProviderNote = document.querySelector("#local-provider-note");
 const saveSettingsButton = document.querySelector("#save-settings");
+const promptTemplateInput = document.querySelector("#prompt-template");
+const savePromptButton = document.querySelector("#save-prompt");
+const resetPromptButton = document.querySelector("#reset-prompt");
 const authPanel = document.querySelector("#auth-panel");
 const authStatusPill = document.querySelector("#auth-status-pill");
 const authDetail = document.querySelector("#auth-detail");
@@ -155,9 +176,15 @@ async function init() {
   serviceState.textContent = `${state.config.serviceName} 已连接，当前桌面网页控制台可用。`;
   populateProviderOptions(state.config.modelProviders || [], state.config.defaults?.modelProvider || "codex");
   populateModelOptions(codexModelSelect, state.config.codexModels || [], state.config.defaults?.codexModel || "gpt-5.4");
+  populateModelOptions(
+    codexReasoningEffortSelect,
+    state.config.codexReasoningEfforts || [],
+    state.config.defaults?.codexReasoningEffort || "high"
+  );
   populateModelOptions(localVisionModelSelect, state.config.localVisionModels || [], state.config.defaults?.localVisionModel || "qwen3-vl:8b");
   toggleSettingsFields();
   renderPairState();
+  renderActivityMonitor();
   setView("dashboard");
 
   if (state.localTrusted) {
@@ -186,7 +213,15 @@ function wireEvents() {
   disconnectButton.addEventListener("click", disconnect);
   analyzeForm.addEventListener("submit", onAnalyzeSubmit);
   refreshAllButton.addEventListener("click", () => runUiTask(refreshEverything, "刷新失败"));
+  copyDashboardTokenButton.addEventListener("click", () =>
+    runUiTask(() => copyToClipboard(state.localConsoleInfo?.pairingToken || ""), "复制 Token 失败")
+  );
+  copyDashboardIphoneUrlButton.addEventListener("click", () =>
+    runUiTask(() => copyToClipboard(state.localConsoleInfo?.iphoneUrl || ""), "复制地址失败")
+  );
   saveSettingsButton.addEventListener("click", () => runUiTask(saveSettings, "保存配置失败"));
+  savePromptButton.addEventListener("click", () => runUiTask(savePromptTemplate, "保存 Prompt 失败"));
+  resetPromptButton.addEventListener("click", () => runUiTask(restoreDefaultPromptTemplate, "恢复默认 Prompt 失败"));
   modelProviderSelect.addEventListener("change", toggleSettingsFields);
   startAuthButton.addEventListener("click", () => runUiTask(startAuth, "启动认证失败"));
   refreshAuthButton.addEventListener("click", () => runUiTask(refreshAuthStatus, "刷新认证状态失败"));
@@ -301,10 +336,13 @@ function disconnect() {
   localStorage.removeItem("pairingToken");
   pairTokenInput.value = "";
   state.sessions = [];
+  state.activities = [];
+  state.events = [];
   state.currentSessionId = null;
   state.selectedSession = null;
   renderPairState();
   renderEventLog();
+  renderActivityMonitor();
   renderHistory();
   renderDetail();
   renderHistoryDetail();
@@ -344,6 +382,11 @@ function connectWebSocket() {
   socket.addEventListener("close", () => setSocketState("WS Offline", "neutral"));
   socket.addEventListener("message", (event) => {
     const payload = JSON.parse(event.data);
+    if (payload.type === "activity" && payload.activity) {
+      pushActivity(payload.activity);
+      return;
+    }
+
     pushEvent(payload);
     state.currentSessionId = payload.sessionId || state.currentSessionId;
 
@@ -380,19 +423,46 @@ async function refreshEverything() {
   }
 
   await Promise.all([
+    loadLocalConsoleInfo(),
     loadSettings(),
+    loadPromptTemplate(),
     refreshAuthStatus(),
     loadHistory(),
-    loadRuntimeStatus()
+    loadRuntimeStatus(),
+    loadActivities()
   ]);
+}
+
+async function loadLocalConsoleInfo() {
+  try {
+    const payload = await fetchJson("/api/local-console-info");
+    state.localConsoleInfo = payload;
+    renderLocalConsoleInfo();
+  } catch {
+    state.localConsoleInfo = null;
+    renderLocalConsoleInfo();
+  }
 }
 
 async function loadSettings() {
   const settings = await authedJson("/api/settings");
   modelProviderSelect.value = settings.modelProvider || "codex";
   codexModelSelect.value = settings.codexModel;
+  codexReasoningEffortSelect.value = settings.codexReasoningEffort || "high";
   localVisionModelSelect.value = settings.localVisionModel || "qwen3-vl:8b";
   toggleSettingsFields();
+}
+
+async function loadPromptTemplate() {
+  const payload = await authedJson("/api/prompt-template");
+  state.defaultPromptTemplate = payload.defaultPromptTemplate || "";
+  promptTemplateInput.value = payload.promptTemplate || "";
+}
+
+async function loadActivities() {
+  const response = await authedJson("/api/activities");
+  state.activities = response.activities || [];
+  renderActivityMonitor();
 }
 
 async function saveSettings() {
@@ -404,16 +474,58 @@ async function saveSettings() {
       body: JSON.stringify({
         modelProvider: modelProviderSelect.value,
         codexModel: codexModelSelect.value,
+        codexReasoningEffort: codexReasoningEffortSelect.value,
         localVisionModel: localVisionModelSelect.value
       })
     });
     modelProviderSelect.value = settings.modelProvider || "codex";
     codexModelSelect.value = settings.codexModel;
+    codexReasoningEffortSelect.value = settings.codexReasoningEffort || "high";
     localVisionModelSelect.value = settings.localVisionModel || "qwen3-vl:8b";
     toggleSettingsFields();
     showBanner("模型配置已保存。", false);
   } finally {
     setButtonBusy(saveSettingsButton, false, "保存配置");
+  }
+}
+
+async function savePromptTemplate() {
+  requireToken();
+  setButtonBusy(savePromptButton, true, "保存中...");
+  try {
+    const payload = await authedJson("/api/prompt-template", {
+      method: "POST",
+      body: JSON.stringify({
+        promptTemplate: promptTemplateInput.value
+      })
+    });
+    state.defaultPromptTemplate = payload.defaultPromptTemplate || state.defaultPromptTemplate;
+    promptTemplateInput.value = payload.promptTemplate || "";
+    showBanner("Prompt 已保存，新的分析请求会立即使用。", false);
+  } finally {
+    setButtonBusy(savePromptButton, false, "保存 Prompt");
+  }
+}
+
+async function restoreDefaultPromptTemplate() {
+  requireToken();
+  setButtonBusy(resetPromptButton, true, "恢复中...");
+  try {
+    if (!state.defaultPromptTemplate) {
+      await loadPromptTemplate();
+    }
+
+    const payload = await authedJson("/api/prompt-template", {
+      method: "POST",
+      body: JSON.stringify({
+        promptTemplate: state.defaultPromptTemplate
+      })
+    });
+    state.defaultPromptTemplate = payload.defaultPromptTemplate || state.defaultPromptTemplate;
+    promptTemplateInput.value = payload.promptTemplate || state.defaultPromptTemplate;
+    showBanner("已恢复默认 Prompt。", false);
+  } finally {
+    setButtonBusy(resetPromptButton, false, "恢复默认并保存");
   }
 }
 
@@ -604,6 +716,7 @@ function renderEventLog() {
       <div class="event-item">
         <strong>${escapeHtml(event.status || "event")}</strong>
         <div>${escapeHtml(event.progressMessage || "状态更新")}</div>
+        <div class="meta-copy">${escapeHtml(sourceDisplayName(event.source || "unknown"))}</div>
         <div class="meta-copy">${escapeHtml(event.sessionId ? shortenSessionId(event.sessionId) : "-")}</div>
       </div>
     `)
@@ -618,6 +731,16 @@ function pushEvent(event) {
   state.events.unshift(event);
   state.events = state.events.slice(0, 18);
   renderEventLog();
+}
+
+function pushActivity(activity) {
+  if (!activity) {
+    return;
+  }
+
+  state.activities.unshift(activity);
+  state.activities = state.activities.slice(0, 40);
+  renderActivityMonitor();
 }
 
 function renderDetail() {
@@ -708,6 +831,40 @@ function renderHistoryDetail() {
   }
 }
 
+function renderActivityMonitor() {
+  const phoneActivities = state.activities.filter((activity) => activity.source === "iphone_web");
+  const latest = phoneActivities[0];
+
+  phoneMonitorSource.textContent = latest ? "iPhone 网页端在线" : "等待手机端操作";
+  phoneMonitorStatus.textContent = latest?.status || actionDisplayName(latest?.action) || "-";
+  phoneMonitorUpdatedAt.textContent = latest ? formatDateTime(latest.timestamp) : "-";
+  phoneMonitorMessage.textContent = latest?.message || "还没有收到手机端操作。";
+  phoneMonitorQuestion.textContent = latest?.question || "当前没有关联问题。";
+  phoneMonitorSession.textContent = latest?.sessionId ? shortenSessionId(latest.sessionId) : "-";
+
+  if (phoneActivities.length === 0) {
+    phoneActivityLog.innerHTML = '<div class="empty-state">手机端一旦完成配对、点击抓取或进入模型生成，这里会实时显示。</div>';
+    return;
+  }
+
+  phoneActivityLog.innerHTML = phoneActivities
+    .slice(0, 16)
+    .map(
+      (activity) => `
+        <div class="activity-item">
+          <div class="activity-head">
+            <strong>${escapeHtml(activity.status || actionDisplayName(activity.action))}</strong>
+            <span class="meta-copy">${escapeHtml(formatDateTime(activity.timestamp))}</span>
+          </div>
+          <div>${escapeHtml(activity.message)}</div>
+          <div class="meta-copy">${escapeHtml(activity.question || "无关联问题")}</div>
+          <div class="meta-copy">${escapeHtml(activity.sessionId ? shortenSessionId(activity.sessionId) : "-")}</div>
+        </div>
+      `
+    )
+    .join("");
+}
+
 function populateProviderOptions(options, defaultProvider) {
   modelProviderSelect.innerHTML = options
     .map((option) => `<option value="${escapeHtml(option.slug)}">${escapeHtml(option.displayName || option.slug)}</option>`)
@@ -727,6 +884,7 @@ function toggleSettingsFields() {
   localModelField.classList.toggle("hidden", !useLocalModel);
   localProviderNote.classList.toggle("hidden", !useLocalModel);
   codexModelSelect.closest(".field").classList.toggle("hidden", useLocalModel);
+  codexReasoningField.classList.toggle("hidden", useLocalModel);
   authPanel.classList.toggle("hidden", useLocalModel);
 
   if (useLocalModel) {
@@ -748,6 +906,13 @@ function renderRuntimeStatus() {
   for (const runtime of ["lmstudio", "ollama"]) {
     renderRuntimeCard(runtime, payload.runtimes[runtime], payload.jobs || []);
   }
+}
+
+function renderLocalConsoleInfo() {
+  const payload = state.localConsoleInfo;
+  dashboardPairingToken.textContent = payload?.pairingToken || "仅本机可见";
+  dashboardIphoneUrl.textContent = payload?.iphoneUrl || "-";
+  renderList(dashboardPhoneUrls, payload?.phoneUrls || []);
 }
 
 function renderRuntimeCard(runtime, status, jobs) {
@@ -801,6 +966,10 @@ function providerDisplayName(provider) {
 }
 
 function formatModelLabel(session) {
+  if (session.modelProvider === "codex") {
+    return `${providerDisplayName(session.modelProvider)} · ${session.codexModel || "-"} · ${session.codexReasoningEffort || "high"}`;
+  }
+
   return `${providerDisplayName(session.modelProvider)} · ${session.codexModel || "-"}`;
 }
 
@@ -822,6 +991,7 @@ async function authedJson(path, init = {}) {
   if (state.token) {
     headers.set("Authorization", `Bearer ${state.token}`);
   }
+  headers.set("X-Screen-Pilot-Client", CLIENT_HEADER_VALUE);
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -829,7 +999,11 @@ async function authedJson(path, init = {}) {
 }
 
 async function fetchJson(path, init = {}) {
-  const response = await fetch(path, init);
+  const headers = new Headers(init.headers || {});
+  if (!headers.has("X-Screen-Pilot-Client")) {
+    headers.set("X-Screen-Pilot-Client", CLIENT_HEADER_VALUE);
+  }
+  const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     const payload = await safeJson(response);
     throw new Error(payload?.error || `${response.status} ${response.statusText}`);
@@ -915,6 +1089,25 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+async function copyToClipboard(value) {
+  if (!value) {
+    throw new Error("没有可复制的内容。");
+  }
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+  } else {
+    const input = document.createElement("textarea");
+    input.value = value;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+
+  showBanner("已复制。", false);
+}
+
 function runtimeActionEndpoint(runtime, action) {
   if (runtime === "lmstudio") {
     return {
@@ -998,6 +1191,32 @@ function statusCopy(status, currentModel) {
 
   const installedCopy = status.serverRunning ? "已检测到安装，server 当前在线。" : "已检测到安装，但 server 当前离线。";
   return `${installedCopy} 当前配置模型是 ${currentModel}。${(status.notes || [])[0] || ""}`;
+}
+
+function actionDisplayName(action) {
+  if (action === "pair") {
+    return "已配对";
+  }
+  if (action === "analyze_requested") {
+    return "已发起分析";
+  }
+  if (action === "session_status") {
+    return "状态更新";
+  }
+  return "事件";
+}
+
+function sourceDisplayName(source) {
+  if (source === "iphone_web") {
+    return "iPhone 网页端";
+  }
+  if (source === "mac_web") {
+    return "Mac 网页端";
+  }
+  if (source === "mac_desktop") {
+    return "Mac 原生壳";
+  }
+  return "未知客户端";
 }
 
 function ensureRuntimeJobPolling(jobId) {

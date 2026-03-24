@@ -20,6 +20,7 @@ export async function runLmStudioVisionAnalysis(input: {
   imagePath: string;
   question: string;
   captureTarget: CaptureTarget;
+  promptTemplate: string;
   localVisionModel: string;
   frontmostApp?: string | null;
   windowTitle?: string | null;
@@ -32,7 +33,7 @@ export async function runLmStudioVisionAnalysis(input: {
     captureTarget: input.captureTarget,
     frontmostApp: input.frontmostApp,
     windowTitle: input.windowTitle
-  });
+  }, input.promptTemplate);
 
   await input.onProgress?.("Uploading screenshot to LM Studio");
 

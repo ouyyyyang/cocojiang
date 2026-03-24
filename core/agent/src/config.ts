@@ -12,9 +12,11 @@ export interface AppConfig {
   sessionsDir: string;
   tokenFilePath: string;
   settingsFilePath: string;
+  promptTemplateFilePath: string;
   codexModelsCachePath: string;
   defaultModelProvider: "codex" | "lmstudio" | "ollama";
   defaultCodexModel: string;
+  defaultCodexReasoningEffort: "low" | "medium" | "high";
   defaultLocalVisionModel: string;
   codexBin: string;
   lmStudioBin: string;
@@ -44,6 +46,11 @@ export function resolveConfig(): AppConfig {
     rawModelProvider === "lmstudio" || rawModelProvider === "ollama" || rawModelProvider === "codex"
       ? rawModelProvider
       : "codex";
+  const rawReasoningEffort = process.env.CODEX_REASONING_EFFORT?.trim();
+  const defaultCodexReasoningEffort =
+    rawReasoningEffort === "low" || rawReasoningEffort === "medium" || rawReasoningEffort === "high"
+      ? rawReasoningEffort
+      : "high";
 
   return {
     host: process.env.HOST || "0.0.0.0",
@@ -56,9 +63,11 @@ export function resolveConfig(): AppConfig {
     sessionsDir: join(dataDir, "sessions"),
     tokenFilePath: join(dataDir, "pairing-token.txt"),
     settingsFilePath: join(dataDir, "settings.json"),
+    promptTemplateFilePath: join(dataDir, "prompt-template.txt"),
     codexModelsCachePath: join(homedir(), ".codex", "models_cache.json"),
     defaultModelProvider,
     defaultCodexModel: process.env.CODEX_MODEL?.trim() || "gpt-5.4",
+    defaultCodexReasoningEffort,
     defaultLocalVisionModel: process.env.LOCAL_VISION_MODEL?.trim() || "qwen3-vl:8b",
     codexBin: process.env.CODEX_BIN || "codex",
     lmStudioBin: process.env.LMSTUDIO_BIN?.trim() || join(homedir(), ".lmstudio", "bin", "lms"),

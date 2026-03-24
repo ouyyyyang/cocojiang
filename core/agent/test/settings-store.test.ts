@@ -12,6 +12,7 @@ test("SettingsStore persists provider and model selections", async () => {
     settingsFilePath: join(dataDir, "settings.json"),
     defaultModelProvider: "codex",
     defaultCodexModel: "gpt-5.4",
+    defaultCodexReasoningEffort: "high",
     defaultLocalVisionModel: "qwen3-vl:8b"
   });
 
@@ -19,18 +20,21 @@ test("SettingsStore persists provider and model selections", async () => {
   assert.deepEqual(defaults, {
     modelProvider: "codex",
     codexModel: "gpt-5.4",
+    codexReasoningEffort: "high",
     localVisionModel: "qwen3-vl:8b"
   });
 
   const updated = await store.saveSettings({
     modelProvider: "lmstudio",
     codexModel: "gpt-5.5",
+    codexReasoningEffort: "medium",
     localVisionModel: "qwen3-vl:4b"
   });
 
   assert.deepEqual(updated, {
     modelProvider: "lmstudio",
     codexModel: "gpt-5.5",
+    codexReasoningEffort: "medium",
     localVisionModel: "qwen3-vl:4b"
   });
 
@@ -39,11 +43,13 @@ test("SettingsStore persists provider and model selections", async () => {
     settingsFilePath: join(dataDir, "settings.json"),
     defaultModelProvider: "codex",
     defaultCodexModel: "gpt-5.4",
+    defaultCodexReasoningEffort: "high",
     defaultLocalVisionModel: "qwen3-vl:8b"
   });
 
   const persisted = await secondStore.getSettings();
   assert.equal(persisted.modelProvider, "lmstudio");
   assert.equal(persisted.codexModel, "gpt-5.5");
+  assert.equal(persisted.codexReasoningEffort, "medium");
   assert.equal(persisted.localVisionModel, "qwen3-vl:4b");
 });

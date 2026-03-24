@@ -20,7 +20,8 @@ test("SessionStore persists pairing token and sessions", async () => {
     question: "What is on screen?",
     captureTarget: "main_display",
     modelProvider: "codex",
-    codexModel: "gpt-5.4"
+    codexModel: "gpt-5.4",
+    codexReasoningEffort: "high"
   });
 
   const updated = await store.updateSession(session.id, (record) => {
@@ -37,6 +38,7 @@ test("SessionStore persists pairing token and sessions", async () => {
   assert.equal(listed[0].id, session.id);
   assert.equal(listed[0].modelProvider, "codex");
   assert.equal(listed[0].codexModel, "gpt-5.4");
+  assert.equal(listed[0].codexReasoningEffort, "high");
 
   const secondStore = new SessionStore({
     dataDir,

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAnalysisPrompt } from "../src/prompt.js";
+import {
+  buildAnalysisPrompt,
+  DEFAULT_ANALYSIS_PROMPT_TEMPLATE,
+  renderAnalysisPromptTemplate
+} from "../src/prompt.js";
 
 test("buildAnalysisPrompt includes user question when provided", () => {
   const prompt = buildAnalysisPrompt({
@@ -21,5 +25,22 @@ test("buildAnalysisPrompt falls back when question is empty", () => {
     captureTarget: "main_display"
   });
 
-  assert.match(prompt, /请直接总结当前屏幕内容/);
+  assert.match(prompt, /请识别这道算法题/);
+  assert.match(prompt, /完整代码/);
+});
+
+test("renderAnalysisPromptTemplate replaces supported placeholders", () => {
+  const prompt = renderAnalysisPromptTemplate("App={{frontmostApp}} Title={{windowTitle}} Q={{question}}", {
+    question: "两数之和",
+    captureTarget: "main_display",
+    frontmostApp: "Safari",
+    windowTitle: "LeetCode"
+  });
+
+  assert.equal(prompt, "App=Safari Title=LeetCode Q=两数之和");
+});
+
+test("default template keeps algorithm solving instructions", () => {
+  assert.match(DEFAULT_ANALYSIS_PROMPT_TEMPLATE, /完整代码/);
+  assert.match(DEFAULT_ANALYSIS_PROMPT_TEMPLATE, /\{\{question\}\}/);
 });

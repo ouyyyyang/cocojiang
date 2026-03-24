@@ -14,6 +14,7 @@ export async function runOllamaVisionAnalysis(input: {
   imagePath: string;
   question: string;
   captureTarget: CaptureTarget;
+  promptTemplate: string;
   localVisionModel: string;
   frontmostApp?: string | null;
   windowTitle?: string | null;
@@ -26,7 +27,7 @@ export async function runOllamaVisionAnalysis(input: {
     captureTarget: input.captureTarget,
     frontmostApp: input.frontmostApp,
     windowTitle: input.windowTitle
-  });
+  }, input.promptTemplate);
 
   await input.onProgress?.("Uploading screenshot to local model");
 

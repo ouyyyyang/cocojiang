@@ -108,6 +108,13 @@ button {
   line-height: 1.6;
 }
 
+#detail-answer,
+#model-answer,
+#history-answer {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .sidebar-head,
 .panel-head,
 .desktop-header,
@@ -376,12 +383,14 @@ select:focus {
 }
 
 .event-log,
-.history-list {
+.history-list,
+.activity-log {
   margin-top: 14px;
 }
 
 .event-item,
-.history-card {
+.history-card,
+.activity-item {
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid var(--line);
@@ -389,9 +398,17 @@ select:focus {
 }
 
 .event-item strong,
-.history-card strong {
+.history-card strong,
+.activity-item strong {
   display: block;
   margin-bottom: 6px;
+}
+
+.activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .history-card {

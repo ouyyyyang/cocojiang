@@ -15,11 +15,16 @@ final class AgentController: ObservableObject {
     @Published var analysisQuestion = ""
     @Published var isSubmittingAnalysis = false
     @Published var isRefreshingState = false
+    @Published var localConsoleInfo: DesktopLocalConsoleInfo?
 
     @Published var modelProvider: DesktopModelProvider = .codex
     @Published var codexModel = "gpt-5.4"
+    @Published var codexReasoningEffort: DesktopCodexReasoningEffort = .high
     @Published var localVisionModel = "qwen3-vl:8b"
     @Published var isSavingSettings = false
+    @Published var promptTemplate = ""
+    @Published var defaultPromptTemplate = ""
+    @Published var isSavingPromptTemplate = false
     @Published var authStatusText = "未检查"
     @Published var authDetailText = "本机 Codex 认证状态会显示在这里。"
     @Published var isRefreshingAuth = false
@@ -32,7 +37,8 @@ final class AgentController: ObservableObject {
     @Published var captureTestTimestamp = "-"
     @Published var isRunningCaptureTest = false
 
-    @Published var modelTestQuestion = "请总结当前屏幕最重要的信息，并说明是否存在错误或阻塞。"
+    @Published var modelTestQuestion =
+        "请识别这道算法题，提取题意与约束，给出解题思路、复杂度分析和可直接提交的完整代码。如果题面看不清，请明确说明不确定点。"
     @Published var modelTestImage: NSImage?
     @Published var modelTestTimestamp = "-"
     @Published var modelTestSummary = "-"
@@ -48,6 +54,7 @@ final class AgentController: ObservableObject {
     @Published var selectedSession: DesktopSessionRecord?
     @Published var selectedSessionImage: NSImage?
     @Published var isLoadingHistory = false
+    @Published var activities: [DesktopActivityRecord] = []
 
     let repositoryRoot: URL
     let logsDirectory: URL
@@ -63,11 +70,12 @@ final class AgentController: ObservableObject {
     private var logHandle: FileHandle?
     private var didAutoStart = false
     private var bootstrapTask: Task<Void, Never>?
+    private var activityMonitorTask: Task<Void, Never>?
 
     var activeModelDisplayName: String {
         switch modelProvider {
         case .codex:
-            return codexModel
+            return "\(codexModel) · \(codexReasoningEffort.displayName)"
         case .lmstudio:
             return localVisionModel
         case .ollama:
@@ -77,6 +85,14 @@ final class AgentController: ObservableObject {
 
     var activeModelSummary: String {
         "\(modelProvider.displayName) · \(activeModelDisplayName)"
+    }
+
+    var phoneActivities: [DesktopActivityRecord] {
+        activities.filter { $0.source == .iphoneWeb }
+    }
+
+    var latestPhoneActivity: DesktopActivityRecord? {
+        phoneActivities.first
     }
 
     func runtimeStatus(for runtime: DesktopLocalRuntimeSlug) -> DesktopLocalRuntimeStatus? {
@@ -119,6 +135,7 @@ final class AgentController: ObservableObject {
     deinit {
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        activityMonitorTask?.cancel()
         process?.terminate()
         try? logHandle?.close()
     }
@@ -177,6 +194,8 @@ final class AgentController: ObservableObject {
                 self.stderrPipe = nil
                 self.bootstrapTask?.cancel()
                 self.bootstrapTask = nil
+                self.activityMonitorTask?.cancel()
+                self.activityMonitorTask = nil
 
                 if process.terminationStatus == 0 {
                     self.statusText = "服务已停止"
@@ -195,6 +214,7 @@ final class AgentController: ObservableObject {
             self.stdoutPipe = stdoutPipe
             self.stderrPipe = stderrPipe
             self.isRunning = true
+            startActivityMonitorLoop()
         } catch {
             self.statusText = "无法启动服务"
             self.present(error: error, status: "无法启动服务")
@@ -205,6 +225,8 @@ final class AgentController: ObservableObject {
     func stopAgent() {
         guard let process else { return }
         appendLog("=== Stopping Mac agent ===")
+        activityMonitorTask?.cancel()
+        activityMonitorTask = nil
         process.terminate()
         self.process = nil
         isRunning = false
@@ -214,6 +236,8 @@ final class AgentController: ObservableObject {
     func stopAgentForTermination() {
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        activityMonitorTask?.cancel()
+        activityMonitorTask = nil
         process?.terminate()
         process = nil
     }
@@ -227,11 +251,14 @@ final class AgentController: ObservableObject {
             }
 
             do {
+                async let consoleTask: Void = refreshLocalConsoleInfo()
                 async let settingsTask: Void = refreshSettings()
+                async let promptTask: Void = refreshPromptTemplate()
                 async let authTask: Void = refreshAuthStatus()
                 async let historyTask: Void = refreshSessions()
                 async let runtimeTask: Void = refreshLocalRuntimeStatus()
-                _ = try await (settingsTask, authTask, historyTask, runtimeTask)
+                async let activitiesTask: Void = refreshActivities()
+                _ = try await (consoleTask, settingsTask, promptTask, authTask, historyTask, runtimeTask, activitiesTask)
             } catch {
                 await MainActor.run {
                     self.present(error: error)
@@ -256,12 +283,14 @@ final class AgentController: ObservableObject {
                 let body = try jsonData([
                     "modelProvider": modelProvider.rawValue,
                     "codexModel": codexModel,
+                    "codexReasoningEffort": codexReasoningEffort.rawValue,
                     "localVisionModel": localVisionModel
                 ])
                 let settings: DesktopSettings = try await requestJSON(path: "/api/settings", method: "POST", body: body)
                 await MainActor.run {
                     self.modelProvider = settings.modelProvider
                     self.codexModel = settings.codexModel
+                    self.codexReasoningEffort = settings.codexReasoningEffort
                     self.localVisionModel = settings.localVisionModel
                     self.statusText = "已保存模型配置"
                 }
@@ -275,6 +304,46 @@ final class AgentController: ObservableObject {
                 self.isSavingSettings = false
             }
         }
+    }
+
+    func savePromptTemplate() {
+        Task {
+            guard isRunning else { return }
+            await MainActor.run {
+                self.isSavingPromptTemplate = true
+                self.lastError = nil
+            }
+
+            do {
+                let body = try jsonData([
+                    "promptTemplate": promptTemplate
+                ])
+                let response: DesktopPromptTemplateResponse = try await requestJSON(
+                    path: "/api/prompt-template",
+                    method: "POST",
+                    body: body
+                )
+                await MainActor.run {
+                    self.promptTemplate = response.promptTemplate
+                    self.defaultPromptTemplate = response.defaultPromptTemplate
+                    self.statusText = "Prompt 已保存，正在重启服务..."
+                }
+                await restartAgentAfterPromptUpdate()
+            } catch {
+                await MainActor.run {
+                    self.present(error: error, status: "保存 Prompt 失败")
+                }
+            }
+
+            await MainActor.run {
+                self.isSavingPromptTemplate = false
+            }
+        }
+    }
+
+    func restoreDefaultPromptTemplate() {
+        promptTemplate = defaultPromptTemplate
+        savePromptTemplate()
     }
 
     func refreshAuthStatus() async throws {
@@ -404,6 +473,7 @@ final class AgentController: ObservableObject {
                 let image = try await loadImage(path: response.imageUrl)
                 await MainActor.run {
                     self.modelProvider = response.modelProvider
+                    self.codexReasoningEffort = response.codexReasoningEffort
                     self.modelTestImage = image
                     self.modelTestTimestamp = self.format(dateString: response.capturedAt)
                     self.modelTestSummary = response.result.summary
@@ -528,6 +598,13 @@ final class AgentController: ObservableObject {
         pasteboard.setString(serviceURLText, forType: .string)
     }
 
+    func copyIphoneTestingURL() {
+        let value = localConsoleInfo?.phoneUrls.first ?? localConsoleInfo?.iphoneUrl ?? serviceURLText
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+    }
+
     func copyPairingToken() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -625,13 +702,23 @@ final class AgentController: ObservableObject {
         loadPersistedToken()
 
         do {
+            async let consoleTask: Void = refreshLocalConsoleInfo()
             async let settingsTask: Void = refreshSettings()
+            async let promptTask: Void = refreshPromptTemplate()
             async let authTask: Void = refreshAuthStatus()
             async let historyTask: Void = refreshSessions()
             async let runtimeTask: Void = refreshLocalRuntimeStatus()
-            _ = try await (settingsTask, authTask, historyTask, runtimeTask)
+            async let activitiesTask: Void = refreshActivities()
+            _ = try await (consoleTask, settingsTask, promptTask, authTask, historyTask, runtimeTask, activitiesTask)
         } catch {
             present(error: error)
+        }
+    }
+
+    private func refreshLocalConsoleInfo() async throws {
+        let info: DesktopLocalConsoleInfo = try await requestJSON(path: "/api/local-console-info")
+        await MainActor.run {
+            self.localConsoleInfo = info
         }
     }
 
@@ -640,7 +727,16 @@ final class AgentController: ObservableObject {
         await MainActor.run {
             self.modelProvider = settings.modelProvider
             self.codexModel = settings.codexModel
+            self.codexReasoningEffort = settings.codexReasoningEffort
             self.localVisionModel = settings.localVisionModel
+        }
+    }
+
+    private func refreshPromptTemplate() async throws {
+        let response: DesktopPromptTemplateResponse = try await requestJSON(path: "/api/prompt-template")
+        await MainActor.run {
+            self.promptTemplate = response.promptTemplate
+            self.defaultPromptTemplate = response.defaultPromptTemplate
         }
     }
 
@@ -658,6 +754,13 @@ final class AgentController: ObservableObject {
         let response: DesktopLocalRuntimeStatusResponse = try await requestJSON(path: "/api/local-runtimes/status")
         await MainActor.run {
             self.localRuntimeStatus = response
+        }
+    }
+
+    private func refreshActivities() async throws {
+        let response: DesktopActivitiesResponse = try await requestJSON(path: "/api/activities")
+        await MainActor.run {
+            self.activities = response.activities
         }
     }
 
@@ -715,6 +818,20 @@ final class AgentController: ObservableObject {
         localRuntimeStatus = snapshot
     }
 
+    private func restartAgentAfterPromptUpdate() async {
+        guard isRunning else { return }
+
+        await MainActor.run {
+            self.stopAgent()
+        }
+
+        try? await Task.sleep(for: .milliseconds(700))
+
+        await MainActor.run {
+            self.startAgent()
+        }
+    }
+
     private func runtimeActionKey(runtime: DesktopLocalRuntimeSlug, action: DesktopLocalRuntimeAction) -> String {
         "\(runtime.rawValue):\(action.rawValue)"
     }
@@ -740,7 +857,12 @@ final class AgentController: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("mac_desktop", forHTTPHeaderField: "X-Screen-Pilot-Client")
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if !isLoopbackURL(url) {
+            throw ControllerError.missingPairingToken
+        }
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
@@ -773,7 +895,12 @@ final class AgentController: ObservableObject {
         }
 
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("mac_desktop", forHTTPHeaderField: "X-Screen-Pilot-Client")
+        if !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if !isLoopbackURL(url) {
+            throw ControllerError.missingPairingToken
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw ControllerError.remote("Failed to load image")
@@ -792,6 +919,34 @@ final class AgentController: ObservableObject {
         }
 
         return Int(portText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func isLoopbackURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else {
+            return false
+        }
+        return host == "127.0.0.1" || host == "localhost" || host == "::1"
+    }
+
+    private func startActivityMonitorLoop() {
+        activityMonitorTask?.cancel()
+        activityMonitorTask = Task { [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                guard self.isRunning else {
+                    return
+                }
+
+                do {
+                    try await self.refreshActivities()
+                } catch {
+                    // Ignore transient startup and shutdown errors during passive monitoring.
+                }
+
+                try? await Task.sleep(for: .milliseconds(1400))
+            }
+        }
     }
 
     private func appendLog(_ line: String) {

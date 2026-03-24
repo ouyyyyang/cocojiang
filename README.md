@@ -337,6 +337,7 @@ Mac 原生壳在 [apps/mac-desktop/Package.swift](/Users/oyzh/interview/apps/mac
 
 - 自动拉起本地 agent
 - `Codex / LM Studio / Ollama` 模型配置
+- 当前分析 prompt 的查看、编辑与恢复默认
 - Codex 认证
 - 抓屏测试和模型测试
 - 历史和日志查看
@@ -354,6 +355,7 @@ Mac 原生壳在 [apps/mac-desktop/Package.swift](/Users/oyzh/interview/apps/mac
 
 - 本机直连或配对
 - `Codex / LM Studio / Ollama` 模型配置
+- 当前分析 prompt 的查看、编辑与恢复默认
 - Codex 认证状态和启动
 - `LM Studio / Ollama` 运行时状态检测和当前模型管理
 - 抓屏测试

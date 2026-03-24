@@ -22,11 +22,22 @@ export async function readJsonFile<T>(path: string): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
+export async function readTextFile(path: string): Promise<string> {
+  return await fs.readFile(path, "utf8");
+}
+
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   await ensureDir(dirname(path));
   const tempPath = `${path}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
   const serialized = `${JSON.stringify(value, null, 2)}\n`;
   await fs.writeFile(tempPath, serialized, "utf8");
+  await fs.rename(tempPath, path);
+}
+
+export async function writeTextAtomic(path: string, value: string): Promise<void> {
+  await ensureDir(dirname(path));
+  const tempPath = `${path}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+  await fs.writeFile(tempPath, value, "utf8");
   await fs.rename(tempPath, path);
 }
 

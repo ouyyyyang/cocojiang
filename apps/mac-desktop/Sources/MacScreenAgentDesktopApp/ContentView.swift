@@ -174,6 +174,37 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 18) {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 14) {
+                        Text("手机测试入口")
+                            .font(.headline)
+
+                        HStack(alignment: .top, spacing: 12) {
+                            infoBlock("Pairing Token", value: controller.localConsoleInfo?.pairingToken ?? controller.pairingToken)
+                            infoBlock("本机 iPhone 页", value: controller.localConsoleInfo?.iphoneUrl ?? controller.serviceURLText)
+                        }
+
+                        bulletBlock("手机局域网地址", items: controller.localConsoleInfo?.phoneUrls ?? [])
+
+                        HStack {
+                            Button("复制 Token") {
+                                controller.copyPairingToken()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("复制手机地址") {
+                                controller.copyIphoneTestingURL()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Text("主页直接显示 token 和手机访问地址，方便你拿手机做 iPhone 页联调。")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } label: {
+                    Label("手机测试", systemImage: "iphone")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 14) {
                         Text("发起一次分析")
                             .font(.headline)
 
@@ -199,6 +230,47 @@ struct ContentView: View {
                     }
                 } label: {
                     Label("分析入口", systemImage: "sparkles")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("手机端实时监控")
+                            .font(.headline)
+
+                        if let latest = controller.latestPhoneActivity {
+                            HStack(alignment: .top, spacing: 12) {
+                                infoBlock("最新阶段", value: latest.status ?? latest.action.displayName)
+                                infoBlock("最近更新", value: formatDateTime(latest.timestamp))
+                            }
+
+                            infoBlock("当前操作", value: latest.message)
+                            infoBlock("对应问题", value: latest.question ?? "当前没有关联问题")
+                            infoBlock("会话", value: sessionLabel(latest.sessionId))
+                        } else {
+                            emptyHint("手机端完成配对、点击抓取并分析后，这里会开始显示抓屏和模型生成过程。")
+                        }
+                    }
+                } label: {
+                    Label("手机端监控", systemImage: "dot.radiowaves.left.and.right")
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("手机端操作时间线")
+                            .font(.headline)
+
+                        if controller.phoneActivities.isEmpty {
+                            emptyHint("还没有收到手机端操作。")
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(Array(controller.phoneActivities.prefix(12))) { activity in
+                                    activityRow(activity)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Label("手机端时间线", systemImage: "list.bullet.clipboard")
                 }
 
                 GroupBox {
@@ -234,6 +306,13 @@ struct ContentView: View {
                         if controller.modelProvider == .codex {
                             TextField("Codex 模型", text: $controller.codexModel)
                                 .textFieldStyle(.roundedBorder)
+
+                            Picker("推理强度", selection: $controller.codexReasoningEffort) {
+                                ForEach(DesktopCodexReasoningEffort.allCases) { effort in
+                                    Text(effort.displayName).tag(effort)
+                                }
+                            }
+                            .pickerStyle(.segmented)
                         } else {
                             TextField("本地视觉模型", text: $controller.localVisionModel)
                                 .textFieldStyle(.roundedBorder)
@@ -252,7 +331,7 @@ struct ContentView: View {
                             .disabled(!controller.isRunning || controller.isSavingSettings)
 
                             Text(controller.modelProvider == .codex
-                                 ? "这里直接决定 `codex exec` 使用的模型。"
+                                 ? "这里直接决定 `codex exec` 使用的模型和推理强度。"
                                  : controller.modelProvider == .lmstudio
                                    ? "这里决定 LM Studio 本地 server 请求使用的模型标识。"
                                    : "这里决定 Ollama 请求使用的本地视觉模型名。")
@@ -291,6 +370,41 @@ struct ContentView: View {
                     } label: {
                         Label("认证", systemImage: "person.crop.circle.badge.checkmark")
                     }
+                }
+
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("分析 Prompt")
+                            .font(.headline)
+
+                        Text("这里直接编辑当前分析 prompt。保存后原生壳会自动重启 agent，新的分析请求会立刻使用更新后的版本。")
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: $controller.promptTemplate)
+                            .font(.body)
+                            .frame(minHeight: 260)
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color(nsColor: .textBackgroundColor))
+                            )
+
+                        HStack {
+                            Button(controller.isSavingPromptTemplate ? "保存中..." : "保存 Prompt") {
+                                controller.savePromptTemplate()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!controller.isRunning || controller.isSavingPromptTemplate)
+
+                            Button("恢复默认并保存") {
+                                controller.restoreDefaultPromptTemplate()
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(!controller.isRunning || controller.isSavingPromptTemplate)
+                        }
+                    }
+                } label: {
+                    Label("Prompt", systemImage: "text.alignleft")
                 }
 
                 runtimeManagementSection
@@ -428,7 +542,7 @@ struct ContentView: View {
                                     Text(session.question.isEmpty ? "未填写问题" : session.question)
                                         .font(.body.weight(.medium))
                                         .lineLimit(2)
-                                    Text("\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel)")
+                                    Text(sessionSummaryLabel(session))
                                         .foregroundStyle(.secondary)
                                         .font(.caption)
                                     Text(session.summary ?? session.error ?? "等待结果")
@@ -456,7 +570,7 @@ struct ContentView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(session.question.isEmpty ? "未填写问题" : session.question)
                                         .font(.title3.weight(.semibold))
-                                    Text("\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel)")
+                                    Text(sessionDetailLabel(session))
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -710,6 +824,35 @@ struct ContentView: View {
         )
     }
 
+    private func activityRow(_ activity: DesktopActivityRecord) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(activity.status ?? activity.action.displayName)
+                    .font(.headline)
+                Spacer()
+                Text(formatDateTime(activity.timestamp))
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+
+            Text(activity.message)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(activity.question ?? "无关联问题")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(sessionLabel(activity.sessionId))
+                .foregroundStyle(.secondary)
+                .font(.caption)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+
     private func nativeImageView(_ image: NSImage) -> some View {
         Image(nsImage: image)
             .resizable()
@@ -746,5 +889,36 @@ struct ContentView: View {
         let prefix = status.serverRunning ? "已检测到安装，server 当前在线。" : "已检测到安装，但 server 当前离线。"
         let note = status.notes.first ?? ""
         return "\(prefix) 当前配置模型是 \(controller.localVisionModel)。\(note)"
+    }
+
+    private func formatDateTime(_ value: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: value) else {
+            return value
+        }
+        return date.formatted(date: .abbreviated, time: .standard)
+    }
+
+    private func sessionLabel(_ sessionID: String?) -> String {
+        guard let sessionID, !sessionID.isEmpty else {
+            return "-"
+        }
+        return String(sessionID.prefix(8)) + "..."
+    }
+
+    private func sessionSummaryLabel(_ session: DesktopSessionSummary) -> String {
+        if session.modelProvider == .codex {
+            return "\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel) · \(session.codexReasoningEffort.displayName)"
+        }
+
+        return "\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel)"
+    }
+
+    private func sessionDetailLabel(_ session: DesktopSessionRecord) -> String {
+        if session.modelProvider == .codex {
+            return "\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel) · \(session.codexReasoningEffort.displayName)"
+        }
+
+        return "\(session.status) · \(session.modelProvider.displayName) · \(session.codexModel)"
     }
 }

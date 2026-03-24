@@ -1,4 +1,9 @@
-import type { CodexModelOption, LocalVisionModelCatalogEntry, ModelProviderOption } from "./types.js";
+import type {
+  CodexModelOption,
+  CodexReasoningEffortOption,
+  LocalVisionModelCatalogEntry,
+  ModelProviderOption
+} from "./types.js";
 import { pathExists, readJsonFile } from "./utils.js";
 
 const FALLBACK_MODELS: CodexModelOption[] = [
@@ -70,6 +75,26 @@ const LOCAL_VISION_MODELS: LocalVisionModelCatalogEntry[] = [
 
 export function loadLocalVisionModelCatalog(): CodexModelOption[] {
   return LOCAL_VISION_MODELS;
+}
+
+export function loadCodexReasoningEffortCatalog(): CodexReasoningEffortOption[] {
+  return [
+    {
+      slug: "low",
+      displayName: "low",
+      description: "更快返回，适合轻量分析。"
+    },
+    {
+      slug: "medium",
+      displayName: "medium",
+      description: "速度和推理深度的平衡值。"
+    },
+    {
+      slug: "high",
+      displayName: "high",
+      description: "更深的推理，适合更复杂的屏幕分析。"
+    }
+  ];
 }
 
 export function getLocalVisionModelSpec(slug: string): LocalVisionModelCatalogEntry | undefined {

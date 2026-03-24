@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import type { AppConfig } from "./config.js";
 import { buildAnalysisPrompt } from "./prompt.js";
-import type { CodexOutput, CaptureTarget } from "./types.js";
+import type { CodexOutput, CaptureTarget, CodexReasoningEffort } from "./types.js";
 
 export interface SpawnedProcessLike {
   stdin?: NodeJS.WritableStream | null;
@@ -63,7 +63,9 @@ export async function runCodexAnalysis(input: {
   imagePath: string;
   question: string;
   captureTarget: CaptureTarget;
+  promptTemplate: string;
   codexModel: string;
+  codexReasoningEffort: CodexReasoningEffort;
   frontmostApp?: string | null;
   windowTitle?: string | null;
   spawnProcess?: SpawnProcess;
@@ -75,11 +77,11 @@ export async function runCodexAnalysis(input: {
     captureTarget: input.captureTarget,
     frontmostApp: input.frontmostApp,
     windowTitle: input.windowTitle
-  });
+  }, input.promptTemplate);
 
   const args = [
     "-c",
-    'model_reasoning_effort="high"',
+    `model_reasoning_effort="${input.codexReasoningEffort}"`,
     "-m",
     input.codexModel,
     "exec",

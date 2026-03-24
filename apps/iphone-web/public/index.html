@@ -93,50 +93,50 @@
             </header>
 
             <section id="top-toast" class="top-toast hidden" aria-live="polite">
-              <div>
-                <p id="top-toast-title" class="status-label">错误提示</p>
-                <strong id="top-toast-message"></strong>
-              </div>
-              <div class="top-toast-actions">
-                <button id="top-toast-view" class="toast-action-button hidden" type="button">查看</button>
-                <button id="top-toast-close" class="toast-close-button" type="button" aria-label="关闭提示">×</button>
-              </div>
-            </section>
-
-            <section class="hero-panel panel">
-              <p class="hero-title">iPhone 结果接收端</p>
-              <p class="hero-subtitle">
-                这个网页现在只负责配对、发起分析、接收状态和查看历史。Mac 端的模型配置、Codex 认证、抓屏测试和模型测试都已移到原生 App。
-              </p>
+              <p id="top-toast-title" class="status-label">提示</p>
+              <strong id="top-toast-message"></strong>
             </section>
 
             <section id="view-home" class="screen-view active">
               <section class="panel">
                 <div class="section-head">
                   <div>
-                    <p class="section-kicker">Home</p>
-                    <h2>发起分析</h2>
+                    <p class="section-kicker">One Tap</p>
+                    <h2>一键抓取并分析</h2>
                   </div>
-                  <span class="section-tag">Ask</span>
+                  <span class="section-tag">Default</span>
                 </div>
 
                 <p class="support-copy compact-copy">
-                  输入一句你想让 Agent 回答的问题。抓图目标固定为主显示器整屏，分析结果会同步推到状态、详情和历史页。
+                  主页固定使用默认问题，直接点一次按钮即可开始抓屏和生成结果。
                 </p>
 
                 <form id="analyze-form" class="form-stack">
-                  <label class="field">
-                    <span>你的问题</span>
-                    <textarea
-                      id="question"
-                      name="question"
-                      rows="7"
-                      placeholder="例如：解释当前屏幕上最重要的问题，并告诉我下一步怎么处理。"
-                    ></textarea>
-                  </label>
-
-                  <button id="analyze-button" class="primary-button full-button" type="submit">抓取并分析</button>
+                  <button id="analyze-button" class="primary-button full-button primary-button-large" type="submit">抓取并分析</button>
                 </form>
+
+                <div id="home-progress-card" class="status-card hidden">
+                  <span class="status-label">执行反馈</span>
+                  <strong id="home-progress-text">等待新的分析请求。</strong>
+                  <div id="home-progress-spinner" class="inline-progress hidden">
+                    <span class="spinner-dot"></span>
+                    <span>处理中</span>
+                  </div>
+                </div>
+
+                <div id="home-result-card" class="detail-block highlight-block hidden">
+                  <h3>本次结果</h3>
+                  <div class="result-stack">
+                    <div>
+                      <span class="status-label">摘要</span>
+                      <p id="home-result-summary"></p>
+                    </div>
+                    <div>
+                      <span class="status-label">完整回答</span>
+                      <div id="home-result-answer" class="rich-answer"></div>
+                    </div>
+                  </div>
+                </div>
               </section>
             </section>
 
@@ -207,8 +207,8 @@
                       <strong id="detail-updated-at">-</strong>
                     </div>
                     <div class="detail-meta-item">
-                      <span>问题</span>
-                      <strong id="detail-question">-</strong>
+                    <span>问题</span>
+                      <strong id="detail-question">默认问题</strong>
                     </div>
                   </div>
 
@@ -228,7 +228,7 @@
                     </div>
                     <div class="detail-block">
                       <h3>回答</h3>
-                      <p id="detail-answer"></p>
+                      <div id="detail-answer" class="rich-answer"></div>
                     </div>
                     <div class="detail-block">
                       <h3>下一步建议</h3>

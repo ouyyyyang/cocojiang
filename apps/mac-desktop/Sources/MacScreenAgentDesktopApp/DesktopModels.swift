@@ -19,6 +19,53 @@ enum DesktopModelProvider: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum DesktopCodexReasoningEffort: String, Codable, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+
+    var id: String { rawValue }
+
+    var displayName: String { rawValue }
+}
+
+enum DesktopClientSource: String, Codable {
+    case iphoneWeb = "iphone_web"
+    case macWeb = "mac_web"
+    case macDesktop = "mac_desktop"
+    case unknown
+
+    var displayName: String {
+        switch self {
+        case .iphoneWeb:
+            return "iPhone 网页端"
+        case .macWeb:
+            return "Mac 网页端"
+        case .macDesktop:
+            return "Mac 原生壳"
+        case .unknown:
+            return "未知客户端"
+        }
+    }
+}
+
+enum DesktopActivityAction: String, Codable {
+    case pair
+    case analyzeRequested = "analyze_requested"
+    case sessionStatus = "session_status"
+
+    var displayName: String {
+        switch self {
+        case .pair:
+            return "配对"
+        case .analyzeRequested:
+            return "发起分析"
+        case .sessionStatus:
+            return "状态更新"
+        }
+    }
+}
+
 enum DesktopLocalRuntimeSlug: String, Codable, CaseIterable, Identifiable {
     case lmstudio
     case ollama
@@ -61,7 +108,13 @@ enum DesktopLocalRuntimeAction: String, Codable {
 struct DesktopSettings: Codable {
     let modelProvider: DesktopModelProvider
     let codexModel: String
+    let codexReasoningEffort: DesktopCodexReasoningEffort
     let localVisionModel: String
+}
+
+struct DesktopPromptTemplateResponse: Codable {
+    let promptTemplate: String
+    let defaultPromptTemplate: String
 }
 
 struct DesktopCodexAuthStatus: Codable {
@@ -99,6 +152,7 @@ struct DesktopModelTestResponse: Codable {
     let question: String
     let modelProvider: DesktopModelProvider
     let codexModel: String
+    let codexReasoningEffort: DesktopCodexReasoningEffort
     let imageUrl: String
     let result: DesktopCodexResult
     let rawMessage: String
@@ -118,6 +172,7 @@ struct DesktopSessionSummary: Codable, Identifiable {
     let captureTarget: String
     let modelProvider: DesktopModelProvider
     let codexModel: String
+    let codexReasoningEffort: DesktopCodexReasoningEffort
     let status: String
     let createdAt: String
     let updatedAt: String
@@ -132,6 +187,7 @@ struct DesktopSessionRecord: Codable, Identifiable {
     let captureTarget: String
     let modelProvider: DesktopModelProvider
     let codexModel: String
+    let codexReasoningEffort: DesktopCodexReasoningEffort
     let status: String
     let createdAt: String
     let updatedAt: String
@@ -143,6 +199,13 @@ struct DesktopSessionRecord: Codable, Identifiable {
 struct DesktopLaunchAuthResponse: Codable {
     let ok: Bool
     let message: String
+}
+
+struct DesktopLocalConsoleInfo: Codable {
+    let pairingToken: String
+    let macWebUrl: String
+    let iphoneUrl: String
+    let phoneUrls: [String]
 }
 
 struct DesktopLocalRuntimeModelRef: Codable, Identifiable {
@@ -191,4 +254,19 @@ struct DesktopLocalRuntimeJob: Codable, Identifiable {
 struct DesktopLocalRuntimeStatusResponse: Codable {
     let runtimes: DesktopLocalRuntimeStatusMap
     var jobs: [DesktopLocalRuntimeJob]
+}
+
+struct DesktopActivityRecord: Codable, Identifiable {
+    let id: String
+    let timestamp: String
+    let source: DesktopClientSource
+    let action: DesktopActivityAction
+    let sessionId: String?
+    let status: String?
+    let message: String
+    let question: String?
+}
+
+struct DesktopActivitiesResponse: Codable {
+    let activities: [DesktopActivityRecord]
 }

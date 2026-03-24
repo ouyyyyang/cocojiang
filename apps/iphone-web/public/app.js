@@ -5,6 +5,8 @@ const VIEW_TITLES = {
   detail: "详情",
   history: "历史"
 };
+const DEFAULT_ANALYSIS_QUESTION =
+  "请识别这道算法题，提取题意与约束，给出解题思路、复杂度分析和可直接提交的完整代码。如果题面看不清，请明确说明不确定点。";
 
 const state = {
   token: localStorage.getItem("pairingToken") || "",
@@ -15,8 +17,11 @@ const state = {
   config: null,
   drawerOpen: false,
   lastError: null,
-  toastTimer: null
+  toastTimer: null,
+  analyzePending: false,
+  currentProgressText: "等待新的分析请求。"
 };
+const CLIENT_HEADER_VALUE = "iphone_web";
 
 const drawer = document.querySelector("#drawer");
 const drawerBackdrop = document.querySelector("#drawer-backdrop");
@@ -32,15 +37,18 @@ const errorModalOpenDetail = document.querySelector("#error-modal-open-detail");
 const topToast = document.querySelector("#top-toast");
 const topToastTitle = document.querySelector("#top-toast-title");
 const topToastMessage = document.querySelector("#top-toast-message");
-const topToastView = document.querySelector("#top-toast-view");
-const topToastClose = document.querySelector("#top-toast-close");
 const drawerLinks = Array.from(document.querySelectorAll(".drawer-link"));
 const pairForm = document.querySelector("#pair-form");
 const pairTokenInput = document.querySelector("#pair-token");
 const pairButton = document.querySelector("#pair-button");
 const analyzeForm = document.querySelector("#analyze-form");
 const analyzeButton = document.querySelector("#analyze-button");
-const questionInput = document.querySelector("#question");
+const homeProgressCard = document.querySelector("#home-progress-card");
+const homeProgressText = document.querySelector("#home-progress-text");
+const homeProgressSpinner = document.querySelector("#home-progress-spinner");
+const homeResultCard = document.querySelector("#home-result-card");
+const homeResultSummary = document.querySelector("#home-result-summary");
+const homeResultAnswer = document.querySelector("#home-result-answer");
 const refreshHistoryButton = document.querySelector("#refresh-history");
 const disconnectButton = document.querySelector("#disconnect-button");
 const pageTitle = document.querySelector("#page-title");
@@ -84,6 +92,7 @@ async function init() {
   wireEvents();
   setView(state.token ? "home" : "pair");
   renderShell();
+  renderAnalyzeFeedback();
 
   if (!state.token) {
     return;
@@ -118,16 +127,6 @@ function wireEvents() {
       hideTopToast();
     }, "打开报错详情失败");
   });
-  topToastClose.addEventListener("click", hideTopToast);
-  topToastView.addEventListener("click", () => {
-    if (!state.lastError) {
-      return;
-    }
-
-    openErrorModal(state.lastError);
-    hideTopToast();
-  });
-
   for (const link of drawerLinks) {
     link.addEventListener("click", () => {
       const nextView = link.dataset.view;
@@ -216,10 +215,13 @@ async function onAnalyzeSubmit(event) {
     }
 
     setButtonBusy(analyzeButton, true, "提交中...");
+    state.analyzePending = true;
+    state.currentProgressText = "分析请求已发送，正在等待 Agent 开始抓屏。";
+    renderAnalyzeFeedback();
 
     try {
       const payload = {
-        question: questionInput.value.trim(),
+        question: DEFAULT_ANALYSIS_QUESTION,
         captureTarget: "main_display"
       };
       const response = await authedJson("/api/analyze", {
@@ -234,7 +236,10 @@ async function onAnalyzeSubmit(event) {
         question: payload.question,
         updatedAt: new Date().toISOString()
       });
+      renderHomeResult(null);
       updateStatus("分析请求已提交，正在等待截图。");
+      state.currentProgressText = "分析请求已提交，正在等待截图。";
+      renderAnalyzeFeedback();
       await loadHistory();
     } finally {
       setButtonBusy(analyzeButton, false, "抓取并分析");
@@ -272,6 +277,8 @@ async function afterPaired() {
   connectWebSocket();
   await loadHistory();
   updateStatus("已完成配对，可以发起新的分析。");
+  state.currentProgressText = "已完成配对，可以发起新的分析。";
+  renderAnalyzeFeedback();
   setView("home");
 }
 
@@ -279,6 +286,12 @@ function renderShell() {
   const paired = Boolean(state.token);
   pairStatePill.textContent = paired ? "已配对" : "未配对";
   pairStatePill.dataset.state = paired ? "paired" : "idle";
+}
+
+function renderAnalyzeFeedback() {
+  homeProgressText.textContent = state.currentProgressText;
+  homeProgressCard.classList.toggle("hidden", !state.currentProgressText);
+  homeProgressSpinner.classList.toggle("hidden", !state.analyzePending);
 }
 
 function connectWebSocket() {
@@ -303,6 +316,10 @@ function connectWebSocket() {
 
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
+    if (message.type === "activity") {
+      return;
+    }
+
     pushEvent(message);
 
     if (message.sessionId) {
@@ -315,14 +332,43 @@ function connectWebSocket() {
         showToast: message.status === "error",
         errorInfo: message.status === "error" ? buildErrorInfoFromSocketMessage(message) : null
       });
+      if (message.sessionId && message.sessionId === state.currentSessionId) {
+        state.currentProgressText = message.progressMessage;
+        if (message.status === "done" || message.status === "error") {
+          state.analyzePending = false;
+        }
+        if (message.status === "done" && message.payload?.result) {
+          renderHomeResult({
+            result: message.payload.result
+          });
+        }
+        renderAnalyzeFeedback();
+      }
     } else if (message.status) {
       updateStatus(`状态更新：${message.status}`, message.status === "error", {
         showToast: message.status === "error",
         errorInfo: message.status === "error" ? buildErrorInfoFromSocketMessage(message) : null
       });
+      if (message.sessionId && message.sessionId === state.currentSessionId) {
+        state.currentProgressText = `状态更新：${message.status}`;
+        if (message.status === "done" || message.status === "error") {
+          state.analyzePending = false;
+        }
+        renderAnalyzeFeedback();
+      }
     }
 
     if (message.status === "done" || message.status === "error") {
+      if (message.sessionId && message.sessionId === state.currentSessionId) {
+        state.analyzePending = false;
+        if (message.status === "done" && message.payload?.result) {
+          state.currentProgressText = message.payload.result.summary || message.payload.result.answer || "分析已完成。";
+        }
+        if (message.status === "error") {
+          state.currentProgressText = message.payload?.error || message.progressMessage || "分析失败。";
+        }
+        renderAnalyzeFeedback();
+      }
       void runUiTask(async () => {
         await Promise.all([loadHistory(), loadSession(message.sessionId)]);
       }, "加载会话详情失败");
@@ -339,6 +385,7 @@ async function loadHistory() {
     state.currentSessionId = null;
     currentSessionLabel.textContent = "No Session";
     renderDetail(null);
+    renderHomeResult(null);
     return;
   }
 
@@ -352,6 +399,7 @@ async function loadHistory() {
 async function loadSession(sessionId) {
   const session = await authedJson(`/api/sessions/${sessionId}`);
   state.currentSessionId = sessionId;
+  syncHomeSessionState(session);
   renderDetail(session);
 }
 
@@ -390,7 +438,7 @@ function renderPendingDetail(session) {
   detailSummary.textContent = "截图和分析结果生成中。";
   detailQuestion.textContent = session.question || "未填写问题";
   detailUpdatedAt.textContent = formatDateTime(session.updatedAt);
-  detailAnswer.textContent = "等待 Codex 返回。";
+  renderStructuredAnswer(detailAnswer, "等待模型生成。");
   detailError.textContent = "无";
   renderList(detailKeyPoints, []);
   renderList(detailOcr, []);
@@ -406,7 +454,7 @@ function renderDetail(session) {
     detailSummary.textContent = "";
     detailQuestion.textContent = "-";
     detailUpdatedAt.textContent = "-";
-    detailAnswer.textContent = "";
+    renderStructuredAnswer(detailAnswer, "");
     detailError.textContent = "";
     renderList(detailKeyPoints, []);
     renderList(detailOcr, []);
@@ -428,12 +476,57 @@ function renderDetail(session) {
   }
 
   detailSummary.textContent = session.result?.summary || "暂无摘要";
-  detailAnswer.textContent = session.result?.answer || "暂无回答";
+  renderStructuredAnswer(detailAnswer, session.result?.answer || "暂无回答");
   detailError.textContent = session.error || "无";
   renderList(detailKeyPoints, session.result?.key_points || []);
   renderList(detailOcr, session.result?.ocr_text || []);
   renderList(detailNextActions, session.result?.next_actions || []);
   renderList(detailUncertainties, session.result?.uncertainties || []);
+}
+
+function syncHomeSessionState(session) {
+  if (!session) {
+    renderHomeResult(null);
+    return;
+  }
+
+  if (session.status === "done" && session.result) {
+    state.analyzePending = false;
+    state.currentProgressText = session.result.summary || session.result.answer || "分析已完成。";
+    renderHomeResult(session);
+    renderAnalyzeFeedback();
+    return;
+  }
+
+  if (session.status === "error") {
+    state.analyzePending = false;
+    state.currentProgressText = session.error || "分析失败。";
+    renderHomeResult(null);
+    renderAnalyzeFeedback();
+    return;
+  }
+
+  if (session.status === "queued" || session.status === "capturing" || session.status === "analyzing") {
+    state.analyzePending = true;
+    state.currentProgressText = latestSessionProgressCopy(session);
+    renderHomeResult(null);
+    renderAnalyzeFeedback();
+  }
+}
+
+function renderHomeResult(session) {
+  const result = session?.result;
+  const hasResult = Boolean(result);
+  homeResultCard.classList.toggle("hidden", !hasResult);
+
+  if (!hasResult) {
+    homeResultSummary.textContent = "";
+    renderStructuredAnswer(homeResultAnswer, "");
+    return;
+  }
+
+  homeResultSummary.textContent = result.summary || "暂无摘要";
+  renderStructuredAnswer(homeResultAnswer, result.answer || "暂无回答");
 }
 
 function renderList(container, items) {
@@ -450,6 +543,51 @@ function renderList(container, items) {
     const li = document.createElement("li");
     li.textContent = item;
     container.append(li);
+  }
+}
+
+function renderStructuredAnswer(container, text) {
+  container.innerHTML = "";
+
+  if (!text) {
+    return;
+  }
+
+  const source = String(text).replace(/\r\n/g, "\n");
+  const codeBlockPattern = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let cursor = 0;
+  let match;
+
+  while ((match = codeBlockPattern.exec(source)) !== null) {
+    appendRichTextSegment(container, source.slice(cursor, match.index));
+
+    const pre = document.createElement("pre");
+    pre.className = "answer-code-block";
+    const code = document.createElement("code");
+    code.textContent = match[2].replace(/\n$/, "");
+    if (match[1].trim()) {
+      code.dataset.language = match[1].trim();
+    }
+    pre.append(code);
+    container.append(pre);
+
+    cursor = match.index + match[0].length;
+  }
+
+  appendRichTextSegment(container, source.slice(cursor));
+}
+
+function appendRichTextSegment(container, segment) {
+  const normalized = segment.trim();
+  if (!normalized) {
+    return;
+  }
+
+  for (const paragraphText of normalized.split(/\n{2,}/)) {
+    const paragraph = document.createElement("p");
+    paragraph.className = "answer-paragraph";
+    paragraph.textContent = paragraphText.trim();
+    container.append(paragraph);
   }
 }
 
@@ -487,6 +625,10 @@ function pushEvent(message) {
 function updateStatus(message, isError = false, options = {}) {
   statusText.textContent = message;
   statusText.style.color = isError ? "var(--warn)" : "var(--ink)";
+  if (!isError && !state.analyzePending) {
+    state.currentProgressText = message;
+    renderAnalyzeFeedback();
+  }
 
   if (isError && options.showToast) {
     showTopToast(
@@ -510,11 +652,15 @@ async function authedJson(url, options = {}) {
 
   const headers = new Headers(options.headers || {});
   headers.set("Authorization", `Bearer ${state.token}`);
+  headers.set("X-Screen-Pilot-Client", CLIENT_HEADER_VALUE);
   return fetchJson(url, { ...options, headers });
 }
 
 async function fetchJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
+  if (!headers.has("X-Screen-Pilot-Client")) {
+    headers.set("X-Screen-Pilot-Client", CLIENT_HEADER_VALUE);
+  }
   if (!headers.has("Content-Type") && options.body) {
     headers.set("Content-Type", "application/json");
   }
@@ -546,13 +692,15 @@ function disconnect() {
   }
 
   pairTokenInput.value = "";
-  questionInput.value = "";
   eventLog.innerHTML = "";
   historyList.innerHTML = "";
   renderDetail(null);
   currentSessionLabel.textContent = "No Session";
   state.lastError = null;
+  state.analyzePending = false;
+  state.currentProgressText = "等待新的分析请求。";
   renderShell();
+  renderAnalyzeFeedback();
   setSocketState("WS Offline");
   hideTopToast();
   closeErrorModal();
@@ -566,6 +714,9 @@ async function runUiTask(task, fallbackMessage) {
     await task();
   } catch (error) {
     const message = error.message || fallbackMessage;
+    state.analyzePending = false;
+    state.currentProgressText = message;
+    renderAnalyzeFeedback();
     updateStatus(message, true, {
       showToast: true,
       errorInfo: {
@@ -594,14 +745,16 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function latestSessionProgressCopy(session) {
+  const latestEvent = Array.isArray(session.events) && session.events.length > 0 ? session.events.at(-1) : null;
+  return latestEvent?.progressMessage || `状态更新：${session.status}`;
+}
+
 function showTopToast(errorInfo) {
   state.lastError = errorInfo;
-  topToastTitle.textContent = errorInfo.title || "错误提示";
+  topToastTitle.textContent = errorInfo.title || "提示";
   topToastMessage.textContent = errorInfo.message || "发生错误";
   topToast.classList.remove("hidden");
-
-  const hasDetail = Boolean(errorInfo.detail || errorInfo.sessionId);
-  topToastView.classList.toggle("hidden", !hasDetail);
 
   if (state.toastTimer) {
     clearTimeout(state.toastTimer);
@@ -609,7 +762,7 @@ function showTopToast(errorInfo) {
 
   state.toastTimer = setTimeout(() => {
     hideTopToast();
-  }, 5000);
+  }, 3000);
 }
 
 function hideTopToast() {

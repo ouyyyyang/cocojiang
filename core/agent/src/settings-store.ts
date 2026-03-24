@@ -1,12 +1,17 @@
 import type { AppConfig } from "./config.js";
-import type { AgentSettings, ModelProvider } from "./types.js";
+import type { AgentSettings, CodexReasoningEffort, ModelProvider } from "./types.js";
 import { ensureDir, pathExists, readJsonFile, writeJsonAtomic } from "./utils.js";
 
 export class SettingsStore {
   constructor(
     private readonly config: Pick<
       AppConfig,
-      "dataDir" | "settingsFilePath" | "defaultModelProvider" | "defaultCodexModel" | "defaultLocalVisionModel"
+      | "dataDir"
+      | "settingsFilePath"
+      | "defaultModelProvider"
+      | "defaultCodexModel"
+      | "defaultCodexReasoningEffort"
+      | "defaultLocalVisionModel"
     >
   ) {}
 
@@ -23,6 +28,7 @@ export class SettingsStore {
     const defaults: AgentSettings = {
       modelProvider: this.config.defaultModelProvider,
       codexModel: this.config.defaultCodexModel,
+      codexReasoningEffort: this.config.defaultCodexReasoningEffort,
       localVisionModel: this.config.defaultLocalVisionModel
     };
 
@@ -35,6 +41,7 @@ export class SettingsStore {
       return {
         modelProvider: this.config.defaultModelProvider,
         codexModel: this.config.defaultCodexModel,
+        codexReasoningEffort: this.config.defaultCodexReasoningEffort,
         localVisionModel: this.config.defaultLocalVisionModel
       };
     }
@@ -43,6 +50,10 @@ export class SettingsStore {
     return {
       modelProvider: sanitizeModelProvider(loaded.modelProvider, this.config.defaultModelProvider),
       codexModel: sanitizeCodexModel(loaded.codexModel, this.config.defaultCodexModel),
+      codexReasoningEffort: sanitizeCodexReasoningEffort(
+        loaded.codexReasoningEffort,
+        this.config.defaultCodexReasoningEffort
+      ),
       localVisionModel: sanitizeLocalVisionModel(loaded.localVisionModel, this.config.defaultLocalVisionModel)
     };
   }
@@ -52,6 +63,7 @@ export class SettingsStore {
     const next: AgentSettings = {
       modelProvider: sanitizeModelProvider(update.modelProvider, current.modelProvider),
       codexModel: sanitizeCodexModel(update.codexModel, current.codexModel),
+      codexReasoningEffort: sanitizeCodexReasoningEffort(update.codexReasoningEffort, current.codexReasoningEffort),
       localVisionModel: sanitizeLocalVisionModel(update.localVisionModel, current.localVisionModel)
     };
 
@@ -76,6 +88,13 @@ export function sanitizeLocalVisionModel(value: string | undefined, fallback: st
   }
 
   return normalized;
+}
+
+export function sanitizeCodexReasoningEffort(
+  value: string | undefined,
+  fallback: CodexReasoningEffort
+): CodexReasoningEffort {
+  return value === "low" || value === "medium" || value === "high" ? value : fallback;
 }
 
 export function sanitizeModelProvider(value: string | undefined, fallback: ModelProvider): ModelProvider {

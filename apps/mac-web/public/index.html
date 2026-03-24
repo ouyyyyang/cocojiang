@@ -65,24 +65,115 @@
         <section id="banner" class="banner hidden"></section>
 
         <section id="view-dashboard" class="view active">
+          <div class="grid-two">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Phone Testing</p>
+                  <h3>手机测试入口</h3>
+                </div>
+                <span class="tag">Token</span>
+              </div>
+
+              <div class="meta-grid">
+                <div class="meta-item">
+                  <span>配对 Token</span>
+                  <strong id="dashboard-pairing-token">-</strong>
+                </div>
+                <div class="meta-item">
+                  <span>本机 iPhone 页</span>
+                  <strong id="dashboard-iphone-url">-</strong>
+                </div>
+              </div>
+
+              <div class="info-block">
+                <h4>手机局域网地址</h4>
+                <ul id="dashboard-phone-urls" class="plain-list"></ul>
+              </div>
+
+              <div class="button-row">
+                <button id="copy-dashboard-token" class="ghost-button" type="button">复制 Token</button>
+                <button id="copy-dashboard-iphone-url" class="ghost-button" type="button">复制本机地址</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Analyze</p>
+                  <h3>发起一次真实分析</h3>
+                </div>
+                <span id="dashboard-session-label" class="tag">No Session</span>
+              </div>
+
+              <form id="analyze-form" class="stack">
+                <label class="field">
+                  <span>问题</span>
+                  <textarea id="analysis-question" rows="6" placeholder="例如：请识别这道算法题，给出解题思路、复杂度分析和完整代码。"></textarea>
+                </label>
+                <div class="button-row">
+                  <button id="analyze-button" class="primary-button" type="submit">抓取并分析</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
           <div class="panel">
             <div class="panel-head">
               <div>
-                <p class="section-kicker">Analyze</p>
-                <h3>发起一次真实分析</h3>
+                <p class="section-kicker">Workflow</p>
+                <h3>主页说明</h3>
               </div>
-              <span id="dashboard-session-label" class="tag">No Session</span>
+            </div>
+            <p class="status-copy">这里会把手机测试需要的 token 和访问地址直接放在主页上。你可以先拿手机打开局域网地址，再回到当前页继续做模型和抓屏测试。</p>
+          </div>
+
+          <div class="grid-two">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Phone Monitor</p>
+                  <h3>手机端实时监控</h3>
+                </div>
+                <span id="phone-monitor-source" class="tag">等待手机端操作</span>
+              </div>
+
+              <div class="meta-grid">
+                <div class="meta-item">
+                  <span>最新阶段</span>
+                  <strong id="phone-monitor-status">-</strong>
+                </div>
+                <div class="meta-item">
+                  <span>最近更新</span>
+                  <strong id="phone-monitor-updated-at">-</strong>
+                </div>
+              </div>
+
+              <div class="info-block accent-block">
+                <h4>当前操作</h4>
+                <p id="phone-monitor-message">还没有收到手机端操作。</p>
+              </div>
+
+              <div class="info-block">
+                <h4>对应问题</h4>
+                <p id="phone-monitor-question">-</p>
+              </div>
+
+              <div class="info-block">
+                <h4>会话</h4>
+                <p id="phone-monitor-session">-</p>
+              </div>
             </div>
 
-            <form id="analyze-form" class="stack">
-              <label class="field">
-                <span>问题</span>
-                <textarea id="analysis-question" rows="6" placeholder="例如：解释当前屏幕最重要的问题，并告诉我下一步怎么处理。"></textarea>
-              </label>
-              <div class="button-row">
-                <button id="analyze-button" class="primary-button" type="submit">抓取并分析</button>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Phone Timeline</p>
+                  <h3>手机端操作时间线</h3>
+                </div>
               </div>
-            </form>
+              <div id="phone-activity-log" class="activity-log"></div>
+            </div>
           </div>
 
           <div class="grid-two">
@@ -180,6 +271,10 @@
                   <span>Codex 模型</span>
                   <select id="codex-model"></select>
                 </label>
+                <label id="codex-reasoning-field" class="field">
+                  <span>推理强度</span>
+                  <select id="codex-reasoning-effort"></select>
+                </label>
                 <label id="local-model-field" class="field">
                   <span>本地视觉模型</span>
                   <select id="local-vision-model"></select>
@@ -203,6 +298,26 @@
               <div class="button-row">
                 <button id="start-auth" class="primary-button" type="button">开始 OpenAI 认证</button>
                 <button id="refresh-auth" class="ghost-button" type="button">刷新状态</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="section-kicker">Prompt</p>
+                  <h3>分析 Prompt</h3>
+                </div>
+              </div>
+              <p class="status-copy">这里直接编辑当前分析 prompt。保存后新的分析请求会立即使用，不需要再去改代码文件。</p>
+              <div class="stack">
+                <label class="field">
+                  <span>当前 Prompt</span>
+                  <textarea id="prompt-template" rows="16" placeholder="当前分析 prompt 会显示在这里。"></textarea>
+                </label>
+                <div class="button-row">
+                  <button id="save-prompt" class="primary-button" type="button">保存 Prompt</button>
+                  <button id="reset-prompt" class="ghost-button" type="button">恢复默认并保存</button>
+                </div>
               </div>
             </div>
           </div>
@@ -359,7 +474,7 @@
 
               <label class="field">
                 <span>测试问题</span>
-                <textarea id="model-question" rows="5">请总结当前屏幕最重要的信息，并说明是否存在错误或阻塞。</textarea>
+                <textarea id="model-question" rows="5">请识别这道算法题，提取题意与约束，给出解题思路、复杂度分析和可直接提交的完整代码。如果题面看不清，请明确说明不确定点。</textarea>
               </label>
 
               <p id="model-meta" class="meta-copy">最近测试时间：-</p>

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { AppConfig } from "./config.js";
 import type {
   CaptureTarget,
+  CodexReasoningEffort,
   ModelProvider,
   SessionEvent,
   SessionRecord,
@@ -44,6 +45,7 @@ export class SessionStore {
     captureTarget: CaptureTarget;
     modelProvider: ModelProvider;
     codexModel: string;
+    codexReasoningEffort: CodexReasoningEffort;
   }): Promise<SessionRecord> {
     const id = randomUUID();
     const timestamp = nowIso();
@@ -54,6 +56,7 @@ export class SessionStore {
       captureTarget: input.captureTarget,
       modelProvider: input.modelProvider,
       codexModel: input.codexModel,
+      codexReasoningEffort: input.codexReasoningEffort,
       status: "queued",
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -78,7 +81,8 @@ export class SessionStore {
       return null;
     }
 
-    return readJsonFile<SessionRecord>(path);
+    const loaded = await readJsonFile<SessionRecord>(path);
+    return normalizeSessionRecord(loaded);
   }
 
   async listSessions(): Promise<SessionSummary[]> {
@@ -102,6 +106,7 @@ export class SessionStore {
           captureTarget: session.captureTarget,
           modelProvider: session.modelProvider,
           codexModel: session.codexModel,
+          codexReasoningEffort: session.codexReasoningEffort,
           status: session.status,
           createdAt: session.createdAt,
           updatedAt: session.updatedAt,
@@ -174,4 +179,11 @@ export class SessionStore {
 
     return record;
   }
+}
+
+function normalizeSessionRecord(record: SessionRecord): SessionRecord {
+  return {
+    ...record,
+    codexReasoningEffort: record.codexReasoningEffort ?? "high"
+  };
 }

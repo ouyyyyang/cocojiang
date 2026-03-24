@@ -58,9 +58,11 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     sessionsDir: join(dataDir, "sessions"),
     tokenFilePath: join(dataDir, "pairing-token.txt"),
     settingsFilePath: join(dataDir, "settings.json"),
+    promptTemplateFilePath: join(dataDir, "prompt-template.txt"),
     codexModelsCachePath: join(dataDir, "models_cache.json"),
     defaultModelProvider: "codex",
     defaultCodexModel: "gpt-5.4",
+    defaultCodexReasoningEffort: "high",
     defaultLocalVisionModel: "qwen3-vl:8b",
     codexBin: "codex",
     lmStudioBin: "lms",
@@ -74,6 +76,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   };
 
   let launchedCodexLogin = false;
+  let lastPrompt = "";
   const runtimeJobs = new Map<string, any>();
   let runtimeJobCounter = 0;
   const localRuntimeManager: LocalRuntimeManagerLike = {
@@ -151,6 +154,10 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     },
     spawnProcess: (_command, args) => {
       const child = new StubProcess();
+      lastPrompt = "";
+      child.stdin.on("data", (chunk) => {
+        lastPrompt += chunk.toString("utf8");
+      });
       queueMicrotask(() => {
         if (args.includes("login") && args.includes("status")) {
           child.stdout.write("Logged in using ChatGPT\n");
@@ -207,6 +214,40 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   assert.equal(settingsResponse.status, 200);
   const settings = await settingsResponse.json();
   assert.equal(settings.codexModel, "gpt-5.4");
+  assert.equal(settings.codexReasoningEffort, "high");
+
+  const promptTemplateResponse = await fetch(`${baseUrl}/api/prompt-template`, {
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(promptTemplateResponse.status, 200);
+  const promptTemplate = await promptTemplateResponse.json();
+  assert.match(promptTemplate.promptTemplate, /算法题屏幕解析与求解助手/);
+  assert.match(promptTemplate.defaultPromptTemplate, /\{\{question\}\}/);
+
+  const savePromptTemplateResponse = await fetch(`${baseUrl}/api/prompt-template`, {
+    method: "POST",
+    headers: {
+      authorization: "Bearer test-token",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      promptTemplate: "你是调试提示词。\n用户问题：{{question}}\n前台应用：{{frontmostApp}}"
+    })
+  });
+  assert.equal(savePromptTemplateResponse.status, 200);
+
+  const localConsoleInfoResponse = await fetch(`${baseUrl}/api/local-console-info`, {
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(localConsoleInfoResponse.status, 200);
+  const localConsoleInfo = await localConsoleInfoResponse.json();
+  assert.equal(localConsoleInfo.pairingToken, "test-token");
+  assert.equal(localConsoleInfo.macWebUrl, `${baseUrl}/mac`);
+  assert.equal(localConsoleInfo.iphoneUrl, `${baseUrl}/`);
 
   const saveSettingsResponse = await fetch(`${baseUrl}/api/settings`, {
     method: "POST",
@@ -306,6 +347,8 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   assert.equal(modelTest.codexModel, "gpt-5.4-mini");
   assert.equal(modelTest.result.answer, "核心问题是依赖没有被正确链接。");
   assert.match(modelTest.rawMessage, /summary/);
+  assert.match(lastPrompt, /你是调试提示词。/);
+  assert.match(lastPrompt, /用户问题：请总结当前屏幕里的关键问题。/);
 
   const modelTestImageResponse = await fetch(`${baseUrl}${modelTest.imageUrl}`, {
     headers: {

@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { promises as fs } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
+import { ActivityStore } from "./activity-store.js";
 import type { AppConfig } from "./config.js";
 import { resolveConfig } from "./config.js";
 import { captureScreen, type SimpleCommandRunner } from "./capture.js";
@@ -10,13 +11,23 @@ import { runCodexAnalysis, type SpawnProcess } from "./codex.js";
 import { LocalRuntimeManager, type LocalRuntimeManagerLike } from "./local-runtime-manager.js";
 import { runLmStudioVisionAnalysis } from "./lmstudio-vision.js";
 import { runOllamaVisionAnalysis } from "./local-vision.js";
-import { loadCodexModelCatalog, loadLocalVisionModelCatalog, loadModelProviderCatalog } from "./model-catalog.js";
+import { DEFAULT_ANALYSIS_PROMPT_TEMPLATE } from "./prompt.js";
+import { PromptTemplateStore } from "./prompt-store.js";
+import {
+  loadCodexModelCatalog,
+  loadCodexReasoningEffortCatalog,
+  loadLocalVisionModelCatalog,
+  loadModelProviderCatalog
+} from "./model-catalog.js";
 import { SessionStore } from "./session-store.js";
 import { SettingsStore } from "./settings-store.js";
 import type {
   AgentConfigPayload,
   CaptureTarget,
+  ClientSource,
+  LocalConsoleInfoPayload,
   ModelProvider,
+  PromptTemplatePayload,
   SessionRecord,
   SessionStatus,
   SupportedCaptureTarget
@@ -55,6 +66,7 @@ export async function createAgentServer(input?: {
   spawnProcess?: SpawnProcess;
   launchCodexLogin?: LaunchCodexLogin;
   localRuntimeManager?: LocalRuntimeManagerLike;
+  promptTemplateStore?: PromptTemplateStore;
   logger?: Pick<Console, "log" | "error">;
 }): Promise<AgentServer> {
   const config = input?.config ?? resolveConfig();
@@ -63,11 +75,13 @@ export async function createAgentServer(input?: {
   const store = input?.store ?? new SessionStore(config);
   const settingsStore = input?.settingsStore ?? new SettingsStore(config);
   const availableModels = await loadCodexModelCatalog(config.codexModelsCachePath);
+  const availableReasoningEfforts = loadCodexReasoningEffortCatalog();
   const localVisionModels = loadLocalVisionModelCatalog();
   const availableProviders = loadModelProviderCatalog();
   const logger = input?.logger ?? console;
   const pairingToken = await store.initialize(config.pairingTokenEnv);
   const initialSettings = await settingsStore.initialize();
+  const activityStore = new ActivityStore();
   const localRuntimeManager =
     input?.localRuntimeManager ??
     new LocalRuntimeManager({
@@ -77,6 +91,10 @@ export async function createAgentServer(input?: {
       lmStudioHost: config.lmStudioHost,
       ollamaHost: config.ollamaHost
     });
+  const promptTemplateStore = input?.promptTemplateStore ?? new PromptTemplateStore(config);
+  const promptTemplateState = {
+    value: await promptTemplateStore.initialize()
+  };
 
   const hubState: {
     hub?: WebSocketHub;
@@ -89,6 +107,7 @@ export async function createAgentServer(input?: {
         store,
         settingsStore,
         availableModels,
+        availableReasoningEfforts,
         localVisionModels,
         availableProviders,
         initialSettings,
@@ -99,7 +118,10 @@ export async function createAgentServer(input?: {
         captureCommandRunner: input?.captureCommandRunner,
         spawnProcess: input?.spawnProcess,
         launchCodexLogin: input?.launchCodexLogin,
-        localRuntimeManager
+        localRuntimeManager,
+        promptTemplateStore,
+        promptTemplateState,
+        activityStore
       });
     } catch (error) {
       logger.error(error);
@@ -163,9 +185,15 @@ async function routeRequest(input: {
   store: SessionStore;
   settingsStore: SettingsStore;
   availableModels: AgentConfigPayload["codexModels"];
+  availableReasoningEfforts: AgentConfigPayload["codexReasoningEfforts"];
   localVisionModels: AgentConfigPayload["localVisionModels"];
   availableProviders: AgentConfigPayload["modelProviders"];
-  initialSettings: { modelProvider: ModelProvider; codexModel: string; localVisionModel: string };
+  initialSettings: {
+    modelProvider: ModelProvider;
+    codexModel: string;
+    codexReasoningEffort: "low" | "medium" | "high";
+    localVisionModel: string;
+  };
   pairingToken: string;
   request: IncomingMessage;
   response: ServerResponse;
@@ -174,6 +202,9 @@ async function routeRequest(input: {
   spawnProcess?: SpawnProcess;
   launchCodexLogin?: LaunchCodexLogin;
   localRuntimeManager: LocalRuntimeManagerLike;
+  promptTemplateStore: PromptTemplateStore;
+  promptTemplateState: { value: string };
+  activityStore: ActivityStore;
 }): Promise<void> {
   const method = input.request.method || "GET";
   const url = new URL(input.request.url || "/", "http://localhost");
@@ -195,10 +226,12 @@ async function routeRequest(input: {
         captureTarget: "main_display",
         modelProvider: input.initialSettings.modelProvider,
         codexModel: input.initialSettings.codexModel,
+        codexReasoningEffort: input.initialSettings.codexReasoningEffort,
         localVisionModel: input.initialSettings.localVisionModel
       },
       modelProviders: input.availableProviders,
       codexModels: input.availableModels,
+      codexReasoningEfforts: input.availableReasoningEfforts,
       localVisionModels: input.localVisionModels
     };
 
@@ -211,6 +244,19 @@ async function routeRequest(input: {
     if (!body.token || !safeTokenEqual(input.pairingToken, body.token)) {
       sendJson(input.response, 401, { error: "Invalid pairing token" });
       return;
+    }
+
+    const source = detectClientSource(input.request);
+    if (source !== "unknown") {
+      const activity = input.activityStore.record({
+        source,
+        action: "pair",
+        message: `${clientSourceLabel(source)} 完成配对`
+      });
+      input.hubState.hub?.broadcast({
+        type: "activity",
+        activity
+      });
     }
 
     sendJson(input.response, 200, { ok: true });
@@ -227,6 +273,7 @@ async function routeRequest(input: {
       const body = await readJsonBody<AnalyzeRequest>(input.request);
       const captureTarget = body.captureTarget ?? "main_display";
       const settings = await input.settingsStore.getSettings();
+      const source = detectClientSource(input.request);
 
       if (captureTarget !== "main_display") {
         sendJson(input.response, 400, {
@@ -239,24 +286,43 @@ async function routeRequest(input: {
         question: (body.question || "").trim(),
         captureTarget,
         modelProvider: settings.modelProvider,
-        codexModel: resolveSelectedModel(settings)
+        codexModel: resolveSelectedModel(settings),
+        codexReasoningEffort: settings.codexReasoningEffort
+      });
+
+      const requestedActivity = input.activityStore.record({
+        source,
+        action: "analyze_requested",
+        sessionId: session.id,
+        message: `${clientSourceLabel(source)} 发起分析请求`,
+        question: session.question
+      });
+      input.hubState.hub?.broadcast({
+        type: "activity",
+        activity: requestedActivity
       });
 
       input.hubState.hub?.broadcast({
+        type: "session_status",
         sessionId: session.id,
         status: "queued",
-        progressMessage: "Request queued"
+        progressMessage: "Request queued",
+        source
       });
 
       void processAnalysisSession({
         config: input.config,
         store: input.store,
+        activityStore: input.activityStore,
         hub: input.hubState.hub,
         sessionId: session.id,
         captureTarget,
         modelProvider: settings.modelProvider,
         modelName: resolveSelectedModel(settings),
+        codexReasoningEffort: settings.codexReasoningEffort,
+        promptTemplate: input.promptTemplateState.value,
         question: session.question,
+        clientSource: source,
         captureCommandRunner: input.captureCommandRunner,
         spawnProcess: input.spawnProcess
       });
@@ -277,19 +343,76 @@ async function routeRequest(input: {
       return;
     }
 
+    if (method === "GET" && pathname === "/api/activities") {
+      sendJson(input.response, 200, {
+        activities: input.activityStore.list()
+      });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/prompt-template") {
+      const payload: PromptTemplatePayload = {
+        promptTemplate: input.promptTemplateState.value,
+        defaultPromptTemplate: DEFAULT_ANALYSIS_PROMPT_TEMPLATE
+      };
+      sendJson(input.response, 200, payload);
+      return;
+    }
+
     if (method === "POST" && pathname === "/api/settings") {
       const body = await readJsonBody<{
         modelProvider?: ModelProvider;
         codexModel?: string;
+        codexReasoningEffort?: "low" | "medium" | "high";
         localVisionModel?: string;
       }>(input.request);
 
       const settings = await input.settingsStore.saveSettings({
         modelProvider: body.modelProvider,
         codexModel: body.codexModel,
+        codexReasoningEffort: body.codexReasoningEffort,
         localVisionModel: body.localVisionModel
       });
       sendJson(input.response, 200, settings);
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/prompt-template") {
+      const body = await readJsonBody<{
+        promptTemplate?: string;
+      }>(input.request);
+
+      if (typeof body.promptTemplate !== "string") {
+        sendJson(input.response, 400, { error: "promptTemplate must be a string" });
+        return;
+      }
+
+      const promptTemplate = await input.promptTemplateStore.savePromptTemplate(body.promptTemplate);
+      input.promptTemplateState.value = promptTemplate;
+
+      const payload: PromptTemplatePayload = {
+        promptTemplate,
+        defaultPromptTemplate: DEFAULT_ANALYSIS_PROMPT_TEMPLATE
+      };
+      sendJson(input.response, 200, payload);
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/local-console-info") {
+      if (!isLoopbackRequest(input.request)) {
+        sendJson(input.response, 403, { error: "Local console info is only available on loopback requests" });
+        return;
+      }
+
+      const localPort = input.request.socket.localPort ?? input.config.port;
+      const payload: LocalConsoleInfoPayload = {
+        pairingToken: input.pairingToken,
+        macWebUrl: `http://127.0.0.1:${localPort}/mac`,
+        iphoneUrl: `http://127.0.0.1:${localPort}/`,
+        phoneUrls: getLocalIpv4Addresses().map((ip) => `http://${ip}:${localPort}/`)
+      };
+
+      sendJson(input.response, 200, payload);
       return;
     }
 
@@ -492,7 +615,9 @@ async function routeRequest(input: {
       const body = await readJsonBody<{ question?: string }>(input.request);
       const settings = await input.settingsStore.getSettings();
       const imagePath = manualModelImagePath(input.config);
-      const question = (body.question || "").trim() || "请总结当前屏幕最重要的信息，并说明是否存在错误或阻塞。";
+      const question =
+        (body.question || "").trim() ||
+        "请识别这道算法题，提取题意与约束，给出解题思路、复杂度分析和可直接提交的完整代码。如果题面看不清，请明确说明不确定点。";
 
       await ensureDir(manualTestsDir(input.config));
       await captureScreen({
@@ -508,8 +633,10 @@ async function routeRequest(input: {
         imagePath,
         question,
         captureTarget: "main_display",
+        promptTemplate: input.promptTemplateState.value,
         modelProvider: settings.modelProvider,
         modelName: selectedModel,
+        codexReasoningEffort: settings.codexReasoningEffort,
         spawnProcess: input.spawnProcess,
         onProgress: undefined
       });
@@ -519,6 +646,7 @@ async function routeRequest(input: {
         question,
         modelProvider: settings.modelProvider,
         codexModel: selectedModel,
+        codexReasoningEffort: settings.codexReasoningEffort,
         imageUrl: "/api/test/model/image",
         result: analysisResult.result,
         rawMessage: analysisResult.rawMessage
@@ -589,19 +717,32 @@ async function routeRequest(input: {
 async function processAnalysisSession(input: {
   config: AppConfig;
   store: SessionStore;
+  activityStore: ActivityStore;
   hub?: WebSocketHub;
   sessionId: string;
   captureTarget: SupportedCaptureTarget;
   modelProvider: ModelProvider;
   modelName: string;
+  codexReasoningEffort: "low" | "medium" | "high";
+  promptTemplate: string;
   question: string;
+  clientSource: ClientSource;
   captureCommandRunner?: SimpleCommandRunner;
   spawnProcess?: SpawnProcess;
 }): Promise<void> {
   try {
-    await transitionSession(input.store, input.hub, input.sessionId, "capturing", "Capturing main display", (record) => {
-      record.error = undefined;
-    });
+    await transitionSession(
+      input.store,
+      input.activityStore,
+      input.hub,
+      input.clientSource,
+      input.sessionId,
+      "capturing",
+      "Capturing main display",
+      (record) => {
+        record.error = undefined;
+      }
+    );
 
     const imagePath = input.store.imageFilePath(input.sessionId);
     await captureScreen({
@@ -611,13 +752,24 @@ async function processAnalysisSession(input: {
       runCommand: input.captureCommandRunner
     });
 
-    await transitionSession(input.store, input.hub, input.sessionId, "capturing", "Screenshot captured", (record) => {
-      record.imagePath = imagePath;
-    });
+    await transitionSession(
+      input.store,
+      input.activityStore,
+      input.hub,
+      input.clientSource,
+      input.sessionId,
+      "capturing",
+      "Screenshot captured",
+      (record) => {
+        record.imagePath = imagePath;
+      }
+    );
 
     await transitionSession(
       input.store,
+      input.activityStore,
       input.hub,
+      input.clientSource,
       input.sessionId,
       "analyzing",
       input.modelProvider === "lmstudio"
@@ -632,20 +784,22 @@ async function processAnalysisSession(input: {
       imagePath,
       question: input.question,
       captureTarget: input.captureTarget,
+      promptTemplate: input.promptTemplate,
       modelProvider: input.modelProvider,
       modelName: input.modelName,
+      codexReasoningEffort: input.codexReasoningEffort,
       spawnProcess: input.spawnProcess,
       onProgress: async (message) => {
-        await transitionSession(input.store, input.hub, input.sessionId, "analyzing", message);
+        await transitionSession(input.store, input.activityStore, input.hub, input.clientSource, input.sessionId, "analyzing", message);
       }
     });
 
-    await transitionSession(input.store, input.hub, input.sessionId, "done", "Analysis completed", (record) => {
+    await transitionSession(input.store, input.activityStore, input.hub, input.clientSource, input.sessionId, "done", "Analysis completed", (record) => {
       record.result = analysis.result;
       record.error = undefined;
     });
   } catch (error) {
-    await transitionSession(input.store, input.hub, input.sessionId, "error", "Analysis failed", (record) => {
+    await transitionSession(input.store, input.activityStore, input.hub, input.clientSource, input.sessionId, "error", "Analysis failed", (record) => {
       record.error = toErrorMessage(error);
     });
   }
@@ -653,7 +807,9 @@ async function processAnalysisSession(input: {
 
 async function transitionSession(
   store: SessionStore,
+  activityStore: ActivityStore,
   hub: WebSocketHub | undefined,
+  source: ClientSource,
   sessionId: string,
   status: SessionStatus,
   progressMessage?: string,
@@ -667,11 +823,27 @@ async function transitionSession(
     store.withStatus(record, status, progressMessage);
   });
 
+  const activity = activityStore.record({
+    source,
+    action: "session_status",
+    sessionId,
+    status,
+    message: progressMessage || `状态更新：${status}`,
+    question: session.question
+  });
+
   hub?.broadcast({
+    type: "session_status",
     sessionId,
     status,
     progressMessage,
+    source,
+    question: session.question,
     payload: status === "done" ? { result: session.result } : status === "error" ? { error: session.error } : undefined
+  });
+  hub?.broadcast({
+    type: "activity",
+    activity
   });
 }
 
@@ -697,7 +869,30 @@ function isLoopbackRequest(request: IncomingMessage): boolean {
   return remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress.startsWith("::ffff:127.");
 }
 
-function resolveSelectedModel(settings: { modelProvider: ModelProvider; codexModel: string; localVisionModel: string }): string {
+function detectClientSource(request: IncomingMessage): ClientSource {
+  const header = request.headers["x-screen-pilot-client"];
+  const raw = Array.isArray(header) ? header[0] : header;
+  return raw === "iphone_web" || raw === "mac_web" || raw === "mac_desktop" ? raw : "unknown";
+}
+
+function clientSourceLabel(source: ClientSource): string {
+  switch (source) {
+    case "iphone_web":
+      return "iPhone 网页端";
+    case "mac_web":
+      return "Mac 网页端";
+    case "mac_desktop":
+      return "Mac 原生壳";
+    default:
+      return "未知客户端";
+  }
+}
+
+function resolveSelectedModel(settings: {
+  modelProvider: ModelProvider;
+  codexModel: string;
+  localVisionModel: string;
+}): string {
   return settings.modelProvider === "codex" ? settings.codexModel : settings.localVisionModel;
 }
 
@@ -706,8 +901,10 @@ async function runConfiguredAnalysis(input: {
   imagePath: string;
   question: string;
   captureTarget: CaptureTarget;
+  promptTemplate: string;
   modelProvider: ModelProvider;
   modelName: string;
+  codexReasoningEffort: "low" | "medium" | "high";
   spawnProcess?: SpawnProcess;
   onProgress?: (message: string) => void | Promise<void>;
 }) {
@@ -717,6 +914,7 @@ async function runConfiguredAnalysis(input: {
       imagePath: input.imagePath,
       question: input.question,
       captureTarget: input.captureTarget,
+      promptTemplate: input.promptTemplate,
       localVisionModel: input.modelName,
       onProgress: input.onProgress
     });
@@ -728,6 +926,7 @@ async function runConfiguredAnalysis(input: {
       imagePath: input.imagePath,
       question: input.question,
       captureTarget: input.captureTarget,
+      promptTemplate: input.promptTemplate,
       localVisionModel: input.modelName,
       onProgress: input.onProgress
     });
@@ -738,7 +937,9 @@ async function runConfiguredAnalysis(input: {
     imagePath: input.imagePath,
     question: input.question,
     captureTarget: input.captureTarget,
+    promptTemplate: input.promptTemplate,
     codexModel: input.modelName,
+    codexReasoningEffort: input.codexReasoningEffort,
     spawnProcess: input.spawnProcess,
     onProgress: input.onProgress
   });
