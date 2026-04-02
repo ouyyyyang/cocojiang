@@ -83,6 +83,20 @@ export function buildCodexLoginCommand(input: {
 export async function launchCodexLoginInTerminal(input: {
   codexBin: string;
   workspaceRoot: string;
+  platform?: NodeJS.Platform;
+}): Promise<void> {
+  const platform = input.platform ?? process.platform;
+
+  if (platform === "win32") {
+    await launchCodexLoginOnWindows(input);
+  } else {
+    await launchCodexLoginOnMacos(input);
+  }
+}
+
+async function launchCodexLoginOnMacos(input: {
+  codexBin: string;
+  workspaceRoot: string;
 }): Promise<void> {
   const command = buildCodexLoginCommand(input);
   const script = `tell application "Terminal"
@@ -114,6 +128,56 @@ end tell`;
       );
     });
   });
+}
+
+async function launchCodexLoginOnWindows(input: {
+  codexBin: string;
+  workspaceRoot: string;
+}): Promise<void> {
+  const command = buildCodexLoginCommandWindows(input);
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("cmd.exe", ["/c", "start", "cmd.exe", "/k", command], {
+      cwd: input.workspaceRoot,
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+
+    let stderr = "";
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        reject(new Error("Failed to launch Codex login: cmd.exe not found"));
+      } else {
+        reject(error);
+      }
+    });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          stderr.trim() || `Failed to launch Codex login flow in console (exit code ${code})`
+        )
+      );
+    });
+  });
+}
+
+export function buildCodexLoginCommandWindows(input: {
+  codexBin: string;
+  workspaceRoot: string;
+}): string {
+  return `cd /d ${winQuote(input.workspaceRoot)} && ${winQuote(input.codexBin)} -c "model_reasoning_effort=high" login`;
+}
+
+function winQuote(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 function shellQuote(value: string): string {

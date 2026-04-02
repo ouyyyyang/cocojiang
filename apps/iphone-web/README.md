@@ -4,7 +4,7 @@
 
 静态入口：
 
-- [public/index.html](/Users/oyzh/interview/apps/iphone-web/public/index.html)
+- [public/index.html](public/index.html)
 
 运行路由：
 

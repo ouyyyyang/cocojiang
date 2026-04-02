@@ -4,9 +4,9 @@
 
 包含三个壳：
 
-- [mac-desktop/README.md](/Users/oyzh/interview/apps/mac-desktop/README.md): Mac 原生桌面壳
-- [mac-web/README.md](/Users/oyzh/interview/apps/mac-web/README.md): Mac / Windows 桌面网页壳
-- [iphone-web/README.md](/Users/oyzh/interview/apps/iphone-web/README.md): iPhone 网页壳
+- [mac-desktop/README.md](mac-desktop/README.md): Mac 原生桌面壳
+- [mac-web/README.md](mac-web/README.md): Mac / Windows 桌面网页壳
+- [iphone-web/README.md](iphone-web/README.md): iPhone 网页壳
 
 职责边界：
 
@@ -17,6 +17,6 @@
 模型配置入口在：
 
 - 原生壳“配置”页
-- 桌面网页壳 `/mac` 的“配置”页
+- 桌面网页壳 `/desktop` 的”配置”页
 
 不要在 `iphone-web` 里继续堆桌面配置功能。

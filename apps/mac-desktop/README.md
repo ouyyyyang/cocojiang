@@ -4,7 +4,7 @@
 
 入口：
 
-- [Package.swift](/Users/oyzh/interview/apps/mac-desktop/Package.swift)
+- [Package.swift](Package.swift)
 
 职责：
 
@@ -33,7 +33,7 @@ npm run build:mac-app
 
 如果你直接开发 SwiftUI：
 
-1. 用 Xcode 打开 [Package.swift](/Users/oyzh/interview/apps/mac-desktop/Package.swift)
+1. 用 Xcode 打开 [Package.swift](Package.swift)
 2. 运行 `MacScreenAgentDesktopApp`
 
 ## Local Models On Mac

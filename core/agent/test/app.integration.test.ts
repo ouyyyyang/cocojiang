@@ -73,6 +73,9 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     codexTimeoutMs: 5_000,
     lmStudioHost: "http://127.0.0.1:1234",
     ollamaHost: "http://127.0.0.1:11434",
+    openaiBaseUrl: "https://api.openai.com",
+    defaultCloudModel: "",
+    defaultCloudApiKey: "",
     serviceName: "Test Agent",
     pairingTokenEnv: "test-token"
   };
@@ -252,7 +255,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   assert.equal(localConsoleInfoResponse.status, 200);
   const localConsoleInfo = await localConsoleInfoResponse.json();
   assert.equal(localConsoleInfo.pairingToken, "test-token");
-  assert.equal(localConsoleInfo.macWebUrl, `${baseUrl}/mac`);
+  assert.equal(localConsoleInfo.macWebUrl, `${baseUrl}/desktop`);
   assert.equal(localConsoleInfo.iphoneUrl, `${baseUrl}/`);
 
   const saveSettingsResponse = await fetch(`${baseUrl}/api/settings`, {

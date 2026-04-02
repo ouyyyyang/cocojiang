@@ -1,7 +1,7 @@
 export const RESERVED_CAPTURE_TARGETS = ["main_display", "frontmost_window"] as const;
 export const SUPPORTED_CAPTURE_TARGETS = ["main_display"] as const;
 export const SESSION_STATUSES = ["queued", "capturing", "analyzing", "done", "error"] as const;
-export const MODEL_PROVIDERS = ["codex", "lmstudio", "ollama"] as const;
+export const MODEL_PROVIDERS = ["codex", "claude", "openai", "lmstudio", "ollama"] as const;
 export const CODEX_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const LOCAL_RUNTIME_SLUGS = ["lmstudio", "ollama"] as const;
 export const LOCAL_RUNTIME_JOB_STATUSES = ["running", "done", "error"] as const;
@@ -61,6 +61,8 @@ export interface AgentSettings {
   codexModel: string;
   codexReasoningEffort: CodexReasoningEffort;
   localVisionModel: string;
+  cloudModel: string;
+  cloudApiKey: string;
 }
 
 export interface SessionEvent {
@@ -126,6 +128,8 @@ export interface AgentConfigPayload {
   codexModels: CodexModelOption[];
   codexReasoningEfforts: CodexReasoningEffortOption[];
   localVisionModels: CodexModelOption[];
+  claudeModels: CodexModelOption[];
+  openaiModels: CodexModelOption[];
 }
 
 export interface PromptTemplatePayload {

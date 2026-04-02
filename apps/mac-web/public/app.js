@@ -72,6 +72,11 @@ const modelProviderSelect = document.querySelector("#model-provider");
 const codexModelSelect = document.querySelector("#codex-model");
 const codexReasoningField = document.querySelector("#codex-reasoning-field");
 const codexReasoningEffortSelect = document.querySelector("#codex-reasoning-effort");
+const cloudModelField = document.querySelector("#cloud-model-field");
+const cloudModelSelect = document.querySelector("#cloud-model");
+const cloudApiKeyField = document.querySelector("#cloud-api-key-field");
+const cloudApiKeyInput = document.querySelector("#cloud-api-key");
+const cloudProviderNote = document.querySelector("#cloud-provider-note");
 const localModelField = document.querySelector("#local-model-field");
 const localVisionModelSelect = document.querySelector("#local-vision-model");
 const localProviderNote = document.querySelector("#local-provider-note");
@@ -183,6 +188,9 @@ async function init() {
     state.config.defaults?.codexReasoningEffort || "high"
   );
   populateModelOptions(localVisionModelSelect, state.config.localVisionModels || [], state.config.defaults?.localVisionModel || "qwen3-vl:8b");
+  populateModelOptions(cloudModelSelect, [...(state.config.claudeModels || []), ...(state.config.openaiModels || [])], "");
+  state.claudeModels = state.config.claudeModels || [];
+  state.openaiModels = state.config.openaiModels || [];
   toggleSettingsFields();
   renderPairState();
   renderActivityMonitor();
@@ -455,6 +463,8 @@ async function loadSettings() {
   codexModelSelect.value = settings.codexModel;
   codexReasoningEffortSelect.value = settings.codexReasoningEffort || "high";
   localVisionModelSelect.value = settings.localVisionModel || "qwen3-vl:8b";
+  cloudModelSelect.value = settings.cloudModel || "";
+  cloudApiKeyInput.value = settings.cloudApiKey || "";
   toggleSettingsFields();
 }
 
@@ -480,13 +490,17 @@ async function saveSettings() {
         modelProvider: modelProviderSelect.value,
         codexModel: codexModelSelect.value,
         codexReasoningEffort: codexReasoningEffortSelect.value,
-        localVisionModel: localVisionModelSelect.value
+        localVisionModel: localVisionModelSelect.value,
+        cloudModel: cloudModelSelect.value,
+        cloudApiKey: cloudApiKeyInput.value
       })
     });
     modelProviderSelect.value = settings.modelProvider || "codex";
     codexModelSelect.value = settings.codexModel;
     codexReasoningEffortSelect.value = settings.codexReasoningEffort || "high";
     localVisionModelSelect.value = settings.localVisionModel || "qwen3-vl:8b";
+    cloudModelSelect.value = settings.cloudModel || "";
+    cloudApiKeyInput.value = settings.cloudApiKey || "";
     toggleSettingsFields();
     showBanner("模型配置已保存。", false);
   } finally {
@@ -907,16 +921,34 @@ function populateModelOptions(selectElement, options, defaultModel) {
 }
 
 function toggleSettingsFields() {
-  const useLocalModel = modelProviderSelect.value !== "codex";
-  localModelField.classList.toggle("hidden", !useLocalModel);
-  localProviderNote.classList.toggle("hidden", !useLocalModel);
-  codexModelSelect.closest(".field").classList.toggle("hidden", useLocalModel);
-  codexReasoningField.classList.toggle("hidden", useLocalModel);
-  authPanel.classList.toggle("hidden", useLocalModel);
+  const provider = modelProviderSelect.value;
+  const isCodex = provider === "codex";
+  const isCloud = provider === "claude" || provider === "openai";
+  const isLocal = provider === "lmstudio" || provider === "ollama";
 
-  if (useLocalModel) {
+  codexModelSelect.closest(".field").classList.toggle("hidden", !isCodex);
+  codexReasoningField.classList.toggle("hidden", !isCodex);
+  authPanel.classList.toggle("hidden", !isCodex);
+
+  cloudModelField.classList.toggle("hidden", !isCloud);
+  cloudApiKeyField.classList.toggle("hidden", !isCloud);
+  cloudProviderNote.classList.toggle("hidden", !isCloud);
+
+  localModelField.classList.toggle("hidden", !isLocal);
+  localProviderNote.classList.toggle("hidden", !isLocal);
+
+  if (isCloud) {
+    const models = provider === "claude" ? (state.claudeModels || []) : (state.openaiModels || []);
+    populateModelOptions(cloudModelSelect, models, cloudModelSelect.value || models[0]?.slug || "");
+    cloudProviderNote.textContent =
+      provider === "claude"
+        ? "需要 Anthropic API Key。在 console.anthropic.com 获取。"
+        : "需要 OpenAI API Key。在 platform.openai.com 获取。支持所有 OpenAI 兼容 API。";
+  }
+
+  if (isLocal) {
     localProviderNote.textContent =
-      modelProviderSelect.value === "lmstudio"
+      provider === "lmstudio"
         ? "LM Studio 需要先 `lms server start`，并把目标模型加载为当前标识，例如 `qwen3-vl:8b`。"
         : "Ollama 需要先 `ollama pull qwen3-vl:8b`，必要时再执行 `ollama serve`。";
   }
@@ -967,29 +999,24 @@ function renderRuntimeCard(runtime, status, jobs) {
 }
 
 function updateModelProgressCopy() {
-  if (modelProviderSelect.value === "lmstudio") {
-    modelProgress.textContent = "模型加载中，正在抓取屏幕并提交给 LM Studio (MLX) 分析...";
-    return;
-  }
-
-  if (modelProviderSelect.value === "ollama") {
-    modelProgress.textContent = "模型加载中，正在抓取屏幕并提交给本地 Ollama 视觉模型分析...";
-    return;
-  }
-
-  modelProgress.textContent = "模型加载中，正在抓取屏幕并提交给 Codex 分析...";
+  const labels = {
+    claude: "Claude API",
+    openai: "OpenAI API",
+    lmstudio: "LM Studio (MLX)",
+    ollama: "本地 Ollama 视觉模型"
+  };
+  const label = labels[modelProviderSelect.value] || "Codex";
+  modelProgress.textContent = `模型加载中，正在抓取屏幕并提交给 ${label} 分析...`;
 }
 
 function providerDisplayName(provider) {
-  if (provider === "lmstudio") {
-    return "LM Studio (MLX)";
-  }
-
-  if (provider === "ollama") {
-    return "本地 Ollama";
-  }
-
-  return "Codex";
+  const names = {
+    claude: "Claude API",
+    openai: "OpenAI API",
+    lmstudio: "LM Studio (MLX)",
+    ollama: "本地 Ollama"
+  };
+  return names[provider] || "Codex";
 }
 
 function formatModelLabel(session) {
@@ -997,7 +1024,7 @@ function formatModelLabel(session) {
     return `${providerDisplayName(session.modelProvider)} · ${session.codexModel || "-"} · ${session.codexReasoningEffort || "high"}`;
   }
 
-  return `${providerDisplayName(session.modelProvider)} · ${session.codexModel || "-"}`;
+  return `${providerDisplayName(session.modelProvider)} · ${session.codexModel || session.cloudModel || "-"}`;
 }
 
 function renderList(element, items) {

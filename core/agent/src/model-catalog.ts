@@ -101,12 +101,38 @@ export function getLocalVisionModelSpec(slug: string): LocalVisionModelCatalogEn
   return LOCAL_VISION_MODELS.find((model) => model.slug === slug);
 }
 
+export const CLAUDE_MODELS: CodexModelOption[] = [
+  { slug: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", description: "Fast and capable." },
+  { slug: "claude-opus-4-6", displayName: "Claude Opus 4.6", description: "Most powerful Claude model." },
+  { slug: "claude-haiku-4-5-20251001", displayName: "Claude Haiku 4.5", description: "Fastest and most compact." }
+];
+
+export const OPENAI_MODELS: CodexModelOption[] = [
+  { slug: "gpt-4o", displayName: "GPT-4o", description: "Multimodal flagship model." },
+  { slug: "gpt-4o-mini", displayName: "GPT-4o mini", description: "Smaller and faster." },
+  { slug: "gpt-4.1", displayName: "GPT-4.1", description: "Latest GPT-4 series." }
+];
+
+export function loadCloudModelCatalog(provider: "claude" | "openai"): CodexModelOption[] {
+  return provider === "claude" ? CLAUDE_MODELS : OPENAI_MODELS;
+}
+
 export function loadModelProviderCatalog(): ModelProviderOption[] {
   return [
     {
       slug: "codex",
       displayName: "Codex",
       description: "Cloud Codex CLI execution."
+    },
+    {
+      slug: "claude",
+      displayName: "Claude API",
+      description: "Anthropic Claude vision API."
+    },
+    {
+      slug: "openai",
+      displayName: "OpenAI API",
+      description: "OpenAI-compatible vision API."
     },
     {
       slug: "lmstudio",

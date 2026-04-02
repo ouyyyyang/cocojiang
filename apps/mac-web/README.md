@@ -4,11 +4,11 @@
 
 静态入口：
 
-- [public/index.html](/Users/oyzh/interview/apps/mac-web/public/index.html)
+- [public/index.html](public/index.html)
 
 运行路由：
 
-- 本地 agent 启动后打印出的 `http://127.0.0.1:<port>/mac`
+- 本地 agent 启动后打印出的 `http://127.0.0.1:<port>/desktop`
 - 开发时通常从 `8788` 开始分配
 
 ## Scope
@@ -46,7 +46,7 @@ lms load <model_key> --identifier qwen3-vl:8b
 
 然后：
 
-1. 打开 `/mac`
+1. 打开 `/desktop`
 2. 进入“配置”
 3. 模型提供方切到 `LM Studio (MLX)`
 4. 模型保持 `qwen3-vl:8b`
@@ -65,7 +65,7 @@ ollama pull qwen3-vl:8b
 ollama serve
 ```
 
-然后在 `/mac` 配置页切到 `Local Ollama`。
+然后在 `/desktop` 配置页切到 `Local Ollama`。
 
 如果你只是先验证网页和 agent 的基本链路，`qwen3-vl:4b` 会更快。
 

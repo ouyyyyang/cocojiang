@@ -9,11 +9,14 @@ import { captureScreen, type SimpleCommandRunner } from "./capture.js";
 import { launchCodexLoginInTerminal, readCodexLoginStatus, type LaunchCodexLogin } from "./codex-login.js";
 import { runCodexAnalysis, type SpawnProcess } from "./codex.js";
 import { LocalRuntimeManager, type LocalRuntimeManagerLike } from "./local-runtime-manager.js";
+import { runClaudeVisionAnalysis } from "./claude-vision.js";
 import { runLmStudioVisionAnalysis } from "./lmstudio-vision.js";
 import { runOllamaVisionAnalysis } from "./local-vision.js";
+import { runOpenAIVisionAnalysis } from "./openai-vision.js";
 import { DEFAULT_ANALYSIS_PROMPT_TEMPLATE } from "./prompt.js";
 import { PromptTemplateStore } from "./prompt-store.js";
 import {
+  loadCloudModelCatalog,
   loadCodexModelCatalog,
   loadCodexReasoningEffortCatalog,
   loadLocalVisionModelCatalog,
@@ -78,6 +81,8 @@ export async function createAgentServer(input?: {
   const availableModels = await loadCodexModelCatalog(config.codexModelsCachePath);
   const availableReasoningEfforts = loadCodexReasoningEffortCatalog();
   const localVisionModels = loadLocalVisionModelCatalog();
+  const claudeModels = loadCloudModelCatalog("claude");
+  const openaiModels = loadCloudModelCatalog("openai");
   const availableProviders = loadModelProviderCatalog();
   const logger = input?.logger ?? console;
   const pairingToken = await store.initialize(config.pairingTokenEnv);
@@ -147,6 +152,8 @@ export async function createAgentServer(input?: {
         availableModels,
         availableReasoningEfforts,
         localVisionModels,
+        claudeModels,
+        openaiModels,
         availableProviders,
         initialSettings,
         pairingToken,
@@ -215,6 +222,8 @@ async function routeRequest(input: {
   availableModels: AgentConfigPayload["codexModels"];
   availableReasoningEfforts: AgentConfigPayload["codexReasoningEfforts"];
   localVisionModels: AgentConfigPayload["localVisionModels"];
+  claudeModels: AgentConfigPayload["claudeModels"];
+  openaiModels: AgentConfigPayload["openaiModels"];
   availableProviders: AgentConfigPayload["modelProviders"];
   initialSettings: {
     modelProvider: ModelProvider;
@@ -261,7 +270,9 @@ async function routeRequest(input: {
       modelProviders: input.availableProviders,
       codexModels: input.availableModels,
       codexReasoningEfforts: input.availableReasoningEfforts,
-      localVisionModels: input.localVisionModels
+      localVisionModels: input.localVisionModels,
+      claudeModels: input.claudeModels,
+      openaiModels: input.openaiModels
     };
 
     sendJson(input.response, 200, payload);
@@ -349,6 +360,7 @@ async function routeRequest(input: {
         modelProvider: settings.modelProvider,
         modelName: resolveSelectedModel(settings),
         codexReasoningEffort: settings.codexReasoningEffort,
+        cloudApiKey: settings.cloudApiKey,
         promptTemplate: input.promptTemplateState.value,
         question: session.question,
         clientSource: source,
@@ -394,13 +406,17 @@ async function routeRequest(input: {
         codexModel?: string;
         codexReasoningEffort?: "low" | "medium" | "high";
         localVisionModel?: string;
+        cloudModel?: string;
+        cloudApiKey?: string;
       }>(input.request);
 
       const settings = await input.settingsStore.saveSettings({
         modelProvider: body.modelProvider,
         codexModel: body.codexModel,
         codexReasoningEffort: body.codexReasoningEffort,
-        localVisionModel: body.localVisionModel
+        localVisionModel: body.localVisionModel,
+        cloudModel: body.cloudModel,
+        cloudApiKey: body.cloudApiKey
       });
       sendJson(input.response, 200, settings);
       return;
@@ -436,7 +452,7 @@ async function routeRequest(input: {
       const localPort = input.request.socket.localPort ?? input.config.port;
       const payload: LocalConsoleInfoPayload = {
         pairingToken: input.pairingToken,
-        macWebUrl: `http://127.0.0.1:${localPort}/mac`,
+        macWebUrl: `http://127.0.0.1:${localPort}/desktop`,
         iphoneUrl: `http://127.0.0.1:${localPort}/`,
         phoneUrls: getLocalIpv4Addresses().map((ip) => `http://${ip}:${localPort}/`)
       };
@@ -684,6 +700,7 @@ async function routeRequest(input: {
         modelProvider: settings.modelProvider,
         modelName: selectedModel,
         codexReasoningEffort: settings.codexReasoningEffort,
+        cloudApiKey: settings.cloudApiKey,
         spawnProcess: input.spawnProcess,
         onProgress: undefined
       });
@@ -771,6 +788,7 @@ async function processAnalysisSession(input: {
   modelProvider: ModelProvider;
   modelName: string;
   codexReasoningEffort: "low" | "medium" | "high";
+  cloudApiKey: string;
   promptTemplate: string;
   question: string;
   clientSource: ClientSource;
@@ -821,11 +839,15 @@ async function processAnalysisSession(input: {
       input.clientSource,
       input.sessionId,
       "analyzing",
-      input.modelProvider === "lmstudio"
-        ? "Submitting screenshot to LM Studio"
-        : input.modelProvider === "ollama"
-          ? "Submitting screenshot to local Ollama model"
-          : "Submitting screenshot to Codex"
+      input.modelProvider === "claude"
+        ? "Submitting screenshot to Claude"
+        : input.modelProvider === "openai"
+          ? "Submitting screenshot to OpenAI"
+          : input.modelProvider === "lmstudio"
+            ? "Submitting screenshot to LM Studio"
+            : input.modelProvider === "ollama"
+              ? "Submitting screenshot to local Ollama model"
+              : "Submitting screenshot to Codex"
     );
 
     const analysis = await runConfiguredAnalysis({
@@ -837,6 +859,7 @@ async function processAnalysisSession(input: {
       modelProvider: input.modelProvider,
       modelName: input.modelName,
       codexReasoningEffort: input.codexReasoningEffort,
+      cloudApiKey: input.cloudApiKey,
       spawnProcess: input.spawnProcess,
       onProgress: async (message) => {
         await transitionSession(input.store, input.activityStore, input.hub, input.clientSource, input.sessionId, "analyzing", message);
@@ -941,8 +964,11 @@ function resolveSelectedModel(settings: {
   modelProvider: ModelProvider;
   codexModel: string;
   localVisionModel: string;
+  cloudModel: string;
 }): string {
-  return settings.modelProvider === "codex" ? settings.codexModel : settings.localVisionModel;
+  if (settings.modelProvider === "codex") return settings.codexModel;
+  if (settings.modelProvider === "claude" || settings.modelProvider === "openai") return settings.cloudModel;
+  return settings.localVisionModel;
 }
 
 async function runConfiguredAnalysis(input: {
@@ -954,9 +980,36 @@ async function runConfiguredAnalysis(input: {
   modelProvider: ModelProvider;
   modelName: string;
   codexReasoningEffort: "low" | "medium" | "high";
+  cloudApiKey: string;
   spawnProcess?: SpawnProcess;
   onProgress?: (message: string) => void | Promise<void>;
 }) {
+  if (input.modelProvider === "claude") {
+    return await runClaudeVisionAnalysis({
+      config: input.config,
+      apiKey: input.cloudApiKey,
+      imagePath: input.imagePath,
+      question: input.question,
+      captureTarget: input.captureTarget,
+      promptTemplate: input.promptTemplate,
+      cloudModel: input.modelName,
+      onProgress: input.onProgress
+    });
+  }
+
+  if (input.modelProvider === "openai") {
+    return await runOpenAIVisionAnalysis({
+      config: input.config,
+      apiKey: input.cloudApiKey,
+      imagePath: input.imagePath,
+      question: input.question,
+      captureTarget: input.captureTarget,
+      promptTemplate: input.promptTemplate,
+      cloudModel: input.modelName,
+      onProgress: input.onProgress
+    });
+  }
+
   if (input.modelProvider === "ollama") {
     return await runOllamaVisionAnalysis({
       config: input.config,
@@ -1062,8 +1115,8 @@ function resolveStaticTarget(
   config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir">,
   pathname: string
 ): { publicDir: string; path: string } {
-  if (pathname === "/mac" || pathname.startsWith("/mac/")) {
-    const relativePath = pathname === "/mac" ? "/" : pathname.slice("/mac".length) || "/";
+  if (pathname === "/desktop" || pathname.startsWith("/desktop/")) {
+    const relativePath = pathname === "/desktop" ? "/" : pathname.slice("/desktop".length) || "/";
     return {
       publicDir: config.macWebPublicDir,
       path: relativePath === "/" ? "/index.html" : relativePath

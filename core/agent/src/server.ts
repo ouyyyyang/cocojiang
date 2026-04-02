@@ -85,7 +85,7 @@ await persistRuntimeFiles(port);
 
 console.log(`${agent.config.serviceName} is listening on port ${port}`);
 console.log(`Pairing token: ${agent.pairingToken}`);
-console.log(`Desktop console: http://127.0.0.1:${port}/mac`);
+console.log(`Desktop console: http://127.0.0.1:${port}/desktop`);
 console.log("Phone pages:");
 for (const url of urls) {
   console.log(`- ${url}`);

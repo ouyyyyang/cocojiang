@@ -12,6 +12,8 @@ export class SettingsStore {
       | "defaultCodexModel"
       | "defaultCodexReasoningEffort"
       | "defaultLocalVisionModel"
+      | "defaultCloudModel"
+      | "defaultCloudApiKey"
     >
   ) {}
 
@@ -29,7 +31,9 @@ export class SettingsStore {
       modelProvider: this.config.defaultModelProvider,
       codexModel: this.config.defaultCodexModel,
       codexReasoningEffort: this.config.defaultCodexReasoningEffort,
-      localVisionModel: this.config.defaultLocalVisionModel
+      localVisionModel: this.config.defaultLocalVisionModel,
+      cloudModel: this.config.defaultCloudModel,
+      cloudApiKey: this.config.defaultCloudApiKey
     };
 
     await writeJsonAtomic(this.config.settingsFilePath, defaults);
@@ -42,7 +46,9 @@ export class SettingsStore {
         modelProvider: this.config.defaultModelProvider,
         codexModel: this.config.defaultCodexModel,
         codexReasoningEffort: this.config.defaultCodexReasoningEffort,
-        localVisionModel: this.config.defaultLocalVisionModel
+        localVisionModel: this.config.defaultLocalVisionModel,
+        cloudModel: this.config.defaultCloudModel,
+        cloudApiKey: this.config.defaultCloudApiKey
       };
     }
 
@@ -54,7 +60,9 @@ export class SettingsStore {
         loaded.codexReasoningEffort,
         this.config.defaultCodexReasoningEffort
       ),
-      localVisionModel: sanitizeLocalVisionModel(loaded.localVisionModel, this.config.defaultLocalVisionModel)
+      localVisionModel: sanitizeLocalVisionModel(loaded.localVisionModel, this.config.defaultLocalVisionModel),
+      cloudModel: loaded.cloudModel?.trim() || this.config.defaultCloudModel,
+      cloudApiKey: loaded.cloudApiKey?.trim() || this.config.defaultCloudApiKey
     };
   }
 
@@ -64,7 +72,9 @@ export class SettingsStore {
       modelProvider: sanitizeModelProvider(update.modelProvider, current.modelProvider),
       codexModel: sanitizeCodexModel(update.codexModel, current.codexModel),
       codexReasoningEffort: sanitizeCodexReasoningEffort(update.codexReasoningEffort, current.codexReasoningEffort),
-      localVisionModel: sanitizeLocalVisionModel(update.localVisionModel, current.localVisionModel)
+      localVisionModel: sanitizeLocalVisionModel(update.localVisionModel, current.localVisionModel),
+      cloudModel: update.cloudModel?.trim() || current.cloudModel,
+      cloudApiKey: update.cloudApiKey?.trim() || current.cloudApiKey
     };
 
     await writeJsonAtomic(this.config.settingsFilePath, next);
@@ -98,5 +108,7 @@ export function sanitizeCodexReasoningEffort(
 }
 
 export function sanitizeModelProvider(value: string | undefined, fallback: ModelProvider): ModelProvider {
-  return value === "ollama" || value === "lmstudio" || value === "codex" ? value : fallback;
+  return value === "ollama" || value === "lmstudio" || value === "codex" || value === "claude" || value === "openai"
+    ? value
+    : fallback;
 }

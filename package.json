@@ -2,6 +2,7 @@
   "name": "screen-pilot-workspace",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Screen Pilot workspace with one shared agent core and separate Mac/iPhone shells.",
   "engines": {

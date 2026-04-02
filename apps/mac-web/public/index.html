@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Screen Pilot Console</title>
-    <link rel="stylesheet" href="/mac/styles.css" />
+    <link rel="stylesheet" href="/desktop/styles.css" />
   </head>
   <body>
     <div class="desktop-shell">
@@ -276,6 +276,15 @@
                   <span>推理强度</span>
                   <select id="codex-reasoning-effort"></select>
                 </label>
+                <label id="cloud-model-field" class="field hidden">
+                  <span>云端模型</span>
+                  <select id="cloud-model"></select>
+                </label>
+                <label id="cloud-api-key-field" class="field hidden">
+                  <span>API Key</span>
+                  <input id="cloud-api-key" type="password" placeholder="sk-... 或 anthropic key" autocomplete="off" />
+                </label>
+                <p id="cloud-provider-note" class="status-copy hidden"></p>
                 <label id="local-model-field" class="field">
                   <span>本地视觉模型</span>
                   <select id="local-vision-model"></select>
@@ -594,6 +603,6 @@
       </main>
     </div>
 
-    <script type="module" src="/mac/app.js"></script>
+    <script type="module" src="/desktop/app.js"></script>
   </body>
 </html>

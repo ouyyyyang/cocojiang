@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { buildCodexLoginCommand, parseCodexLoginStatus, readCodexLoginStatus } from "../src/codex-login.js";
+import { buildCodexLoginCommand, buildCodexLoginCommandWindows, parseCodexLoginStatus, readCodexLoginStatus } from "../src/codex-login.js";
 import type { SpawnedProcessLike } from "../src/codex.js";
 
 class FakeProcess extends EventEmitter implements SpawnedProcessLike {
@@ -29,6 +29,17 @@ test("buildCodexLoginCommand keeps workspace quoted", () => {
 
   assert.match(command, /cd '\/tmp\/my repo'/);
   assert.match(command, /'\/usr\/local\/bin\/codex'/);
+  assert.match(command, /login$/);
+});
+
+test("buildCodexLoginCommandWindows uses cd /d and double-quote escaping", () => {
+  const command = buildCodexLoginCommandWindows({
+    codexBin: "C:\\Program Files\\codex\\codex.exe",
+    workspaceRoot: "C:\\Users\\test\\my repo"
+  });
+
+  assert.match(command, /cd \/d "C:\\Users\\test\\my repo"/);
+  assert.match(command, /"C:\\Program Files\\codex\\codex.exe"/);
   assert.match(command, /login$/);
 });
 

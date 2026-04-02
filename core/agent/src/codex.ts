@@ -151,9 +151,13 @@ export async function runCodexAnalysis(input: {
   });
 
   return await new Promise<CodexRunResult>((resolve, reject) => {
-    child.on("error", (error) => {
+    child.on("error", (error: NodeJS.ErrnoException) => {
       clearTimeout(timeout);
-      reject(error);
+      if (error.code === "ENOENT") {
+        reject(new Error(`Codex binary not found at "${input.config.codexBin}". Please install Codex first: https://codex.openai.com`));
+      } else {
+        reject(error);
+      }
     });
 
     child.on("close", (code) => {

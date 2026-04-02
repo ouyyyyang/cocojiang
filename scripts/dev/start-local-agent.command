@@ -9,8 +9,35 @@ LOG_FILE="$RUNTIME_DIR/agent.log"
 PID_FILE="$RUNTIME_DIR/agent.pid"
 PORT_FILE="$RUNTIME_DIR/agent.port"
 
+# ── preflight checks ────────────────────────────────────────────────
+
+if ! command -v node &>/dev/null; then
+  echo "Node.js is not installed."
+  echo ""
+  echo "Install it from: https://nodejs.org/"
+  echo "Or via Homebrew:  brew install node"
+  exit 1
+fi
+
+NODE_MAJOR="$(node -e 'console.log(process.versions.node.split(".")[0])')"
+if (( NODE_MAJOR < 18 )); then
+  echo "Node.js 18.18+ is required, but you have $(node -v)."
+  echo "Please upgrade: https://nodejs.org/"
+  exit 1
+fi
+
+# ── setup ────────────────────────────────────────────────────────────
+
 mkdir -p "$RUNTIME_DIR" "$APP_DATA_DIR"
 touch "$LOG_FILE"
+
+# auto npm install if node_modules is missing
+if [[ ! -d "$ROOT_DIR/node_modules" ]]; then
+  echo "First run detected — installing dependencies..."
+  cd "$ROOT_DIR" && npm install
+fi
+
+# ── check for existing agent ────────────────────────────────────────
 
 if [[ -f "$PID_FILE" ]]; then
   EXISTING_PID="$(<"$PID_FILE")"
@@ -21,7 +48,7 @@ if [[ -f "$PID_FILE" ]]; then
     fi
 
     URL="http://127.0.0.1:$PORT"
-    LOCAL_CONSOLE_URL="$URL/mac"
+    LOCAL_CONSOLE_URL="$URL/desktop"
     echo "Agent is already running at $URL"
     echo "Desktop console: $LOCAL_CONSOLE_URL"
 
@@ -34,6 +61,8 @@ if [[ -f "$PID_FILE" ]]; then
 
   rm -f "$PID_FILE" "$PORT_FILE"
 fi
+
+# ── find port ────────────────────────────────────────────────────────
 
 find_port() {
   local candidate
@@ -53,7 +82,7 @@ PORT="$(find_port)" || {
 }
 
 URL="http://127.0.0.1:$PORT"
-LOCAL_CONSOLE_URL="$URL/mac"
+LOCAL_CONSOLE_URL="$URL/desktop"
 
 {
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') starting local agent ==="
@@ -61,8 +90,11 @@ LOCAL_CONSOLE_URL="$URL/mac"
   echo "Port: $PORT"
 } >> "$LOG_FILE"
 
+# ── build & start ────────────────────────────────────────────────────
+
 cd "$ROOT_DIR"
 
+echo "Building..."
 if ! npm run build >> "$LOG_FILE" 2>&1; then
   echo "Build failed. Check: $LOG_FILE"
   exit 1
@@ -72,6 +104,7 @@ echo "$PORT" > "$PORT_FILE"
 rm -f "$PID_FILE"
 nohup /bin/zsh -lc "cd '$ROOT_DIR'; echo '$PORT' > '$PORT_FILE'; echo \$\$ > '$PID_FILE'; exec env PORT='$PORT' APP_DATA_DIR='$APP_DATA_DIR' SCREEN_PILOT_PID_FILE='$PID_FILE' SCREEN_PILOT_PORT_FILE='$PORT_FILE' node build/node/core/agent/src/server.js >> '$LOG_FILE' 2>&1" >/dev/null 2>&1 &
 
+echo "Starting agent..."
 for _ in {1..30}; do
   if [[ -f "$PID_FILE" ]]; then
     PID="$(<"$PID_FILE")"
@@ -90,6 +123,7 @@ for _ in {1..30}; do
       echo "Pairing token copied to clipboard: $TOKEN"
     fi
 
+    echo ""
     echo "Agent is ready at $URL"
     echo "Desktop console: $LOCAL_CONSOLE_URL"
 

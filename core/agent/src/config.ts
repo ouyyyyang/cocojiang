@@ -14,7 +14,7 @@ export interface AppConfig {
   settingsFilePath: string;
   promptTemplateFilePath: string;
   codexModelsCachePath: string;
-  defaultModelProvider: "codex" | "lmstudio" | "ollama";
+  defaultModelProvider: "codex" | "claude" | "openai" | "lmstudio" | "ollama";
   defaultCodexModel: string;
   defaultCodexReasoningEffort: "low" | "medium" | "high";
   defaultLocalVisionModel: string;
@@ -27,6 +27,9 @@ export interface AppConfig {
   codexTimeoutMs: number;
   lmStudioHost: string;
   ollamaHost: string;
+  openaiBaseUrl: string;
+  defaultCloudModel: string;
+  defaultCloudApiKey: string;
   serviceName: string;
   pairingTokenEnv?: string;
 }
@@ -52,10 +55,10 @@ export function resolveConfig(): AppConfig {
   const workspaceRoot = process.cwd();
   const dataDir = process.env.APP_DATA_DIR || join(homedir(), ".mac-screen-agent-mvp");
   const rawModelProvider = process.env.MODEL_PROVIDER?.trim();
-  const defaultModelProvider =
-    rawModelProvider === "lmstudio" || rawModelProvider === "ollama" || rawModelProvider === "codex"
-      ? rawModelProvider
-      : "codex";
+  const validProviders = ["codex", "claude", "openai", "lmstudio", "ollama"] as const;
+  const defaultModelProvider = (validProviders as readonly string[]).includes(rawModelProvider ?? "")
+    ? (rawModelProvider as (typeof validProviders)[number])
+    : "codex";
   const rawReasoningEffort = process.env.CODEX_REASONING_EFFORT?.trim();
   const defaultCodexReasoningEffort =
     rawReasoningEffort === "low" || rawReasoningEffort === "medium" || rawReasoningEffort === "high"
@@ -88,6 +91,9 @@ export function resolveConfig(): AppConfig {
     codexTimeoutMs: readPositiveInt(process.env.CODEX_TIMEOUT_MS, 120_000),
     lmStudioHost: process.env.LMSTUDIO_HOST?.trim() || "http://127.0.0.1:1234",
     ollamaHost: process.env.OLLAMA_HOST?.trim() || "http://127.0.0.1:11434",
+    openaiBaseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com",
+    defaultCloudModel: process.env.CLOUD_MODEL?.trim() || "",
+    defaultCloudApiKey: process.env.CLOUD_API_KEY?.trim() || "",
     serviceName: "Screen Pilot Agent",
     pairingTokenEnv: process.env.PAIRING_TOKEN?.trim() || undefined
   };

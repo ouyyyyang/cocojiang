@@ -542,7 +542,7 @@ final class AgentController: ObservableObject {
     }
 
     func openInBrowser() {
-        guard let url = URL(string: "/mac", relativeTo: currentURL)?.absoluteURL else { return }
+        guard let url = URL(string: "/desktop", relativeTo: currentURL)?.absoluteURL else { return }
         NSWorkspace.shared.open(url)
     }
 
