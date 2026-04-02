@@ -7,6 +7,25 @@ RUNTIME_DIR="$ROOT_DIR/runtime/agent"
 PID_FILE="$RUNTIME_DIR/agent.pid"
 PORT_FILE="$RUNTIME_DIR/agent.port"
 
+lookup_port() {
+  if [[ -f "$PORT_FILE" ]]; then
+    PORT_FROM_FILE="$(<"$PORT_FILE")"
+    if [[ -n "$PORT_FROM_FILE" ]]; then
+      echo "$PORT_FROM_FILE"
+      return 0
+    fi
+  fi
+
+  for port in 8788 8789 8790 8791 8792; do
+    if lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+      echo "$port"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 lookup_pid() {
   local port
 
@@ -38,11 +57,24 @@ lookup_pid() {
   pgrep -f "build/node/core/agent/src/server.js" | head -n 1
 }
 
+PORT="$(lookup_port || true)"
 PID="$(lookup_pid || true)"
 
 if [[ -z "$PID" ]]; then
   echo "No local agent PID file found."
   exit 0
+fi
+
+if [[ -n "$PORT" ]]; then
+  if curl -fsS -X POST "http://127.0.0.1:$PORT/api/local-control/stop" >/dev/null 2>&1; then
+    for _ in {1..15}; do
+      if ! kill -0 "$PID" 2>/dev/null; then
+        break
+      fi
+
+      sleep 1
+    done
+  fi
 fi
 
 if [[ -n "$PID" ]] && kill -0 "$PID" 2>/dev/null; then

@@ -6,8 +6,8 @@ import Foundation
 final class AgentController: ObservableObject {
     @Published var isRunning = false
     @Published var statusText = "未启动"
-    @Published var portText = "8790"
-    @Published var serviceURLText = "http://127.0.0.1:8790"
+    @Published var portText = "8788"
+    @Published var serviceURLText = "http://127.0.0.1:8788"
     @Published var pairingToken = "-"
     @Published var logText = "日志会显示在这里。\n"
     @Published var lastError: String?
@@ -57,6 +57,9 @@ final class AgentController: ObservableObject {
     @Published var activities: [DesktopActivityRecord] = []
 
     let repositoryRoot: URL
+    let sharedRuntimeDirectory: URL
+    let sharedPidFileURL: URL
+    let sharedPortFileURL: URL
     let logsDirectory: URL
     let logFileURL: URL
     let appDataDirectory: URL
@@ -114,9 +117,12 @@ final class AgentController: ObservableObject {
 
     init() {
         repositoryRoot = Self.resolveRepositoryRoot()
+        sharedRuntimeDirectory = repositoryRoot.appendingPathComponent("runtime/agent", isDirectory: true)
+        sharedPidFileURL = sharedRuntimeDirectory.appendingPathComponent("agent.pid")
+        sharedPortFileURL = sharedRuntimeDirectory.appendingPathComponent("agent.port")
         logsDirectory = repositoryRoot.appendingPathComponent("runtime/mac-desktop", isDirectory: true)
         logFileURL = logsDirectory.appendingPathComponent("desktop-agent.log")
-        appDataDirectory = logsDirectory.appendingPathComponent("app_data", isDirectory: true)
+        appDataDirectory = sharedRuntimeDirectory.appendingPathComponent("app_data", isDirectory: true)
         tokenFileURL = appDataDirectory.appendingPathComponent("pairing-token.txt")
         let shellEnvironment = Self.resolveShellEnvironment()
         shellPath = shellEnvironment.path
@@ -152,6 +158,10 @@ final class AgentController: ObservableObject {
             return
         }
 
+        if attachToRunningAgentIfAvailable() {
+            return
+        }
+
         let port = normalizedPort()
         let serviceURL = URL(string: "http://127.0.0.1:\(port)")!
         serviceURLText = serviceURL.absoluteString
@@ -171,6 +181,8 @@ final class AgentController: ObservableObject {
             [
                 "PORT": String(port),
                 "APP_DATA_DIR": appDataDirectory.path,
+                "SCREEN_PILOT_PID_FILE": sharedPidFileURL.path,
+                "SCREEN_PILOT_PORT_FILE": sharedPortFileURL.path,
                 "PATH": shellPath,
                 "CODEX_BIN": codexExecutablePath ?? "codex"
             ],
@@ -223,14 +235,9 @@ final class AgentController: ObservableObject {
     }
 
     func stopAgent() {
-        guard let process else { return }
-        appendLog("=== Stopping Mac agent ===")
-        activityMonitorTask?.cancel()
-        activityMonitorTask = nil
-        process.terminate()
-        self.process = nil
-        isRunning = false
-        statusText = "服务已停止"
+        Task {
+            await stopAgentGracefully()
+        }
     }
 
     func stopAgentForTermination() {
@@ -821,14 +828,41 @@ final class AgentController: ObservableObject {
     private func restartAgentAfterPromptUpdate() async {
         guard isRunning else { return }
 
-        await MainActor.run {
-            self.stopAgent()
-        }
+        await stopAgentGracefully()
 
         try? await Task.sleep(for: .milliseconds(700))
 
         await MainActor.run {
             self.startAgent()
+        }
+    }
+
+    private func stopAgentGracefully() async {
+        guard isRunning else { return }
+
+        await MainActor.run {
+            self.appendLog("=== Stopping Mac agent ===")
+            self.activityMonitorTask?.cancel()
+            self.activityMonitorTask = nil
+        }
+
+        do {
+            let _: DesktopActionAckResponse = try await requestJSON(path: "/api/local-control/stop", method: "POST")
+        } catch {
+            if let process {
+                process.terminate()
+            } else {
+                await MainActor.run {
+                    self.present(error: error, status: "停止服务失败")
+                }
+                return
+            }
+        }
+
+        await MainActor.run {
+            self.process = nil
+            self.isRunning = false
+            self.statusText = "服务已停止"
         }
     }
 
@@ -964,8 +998,63 @@ final class AgentController: ObservableObject {
         }
     }
 
+    private func attachToRunningAgentIfAvailable() -> Bool {
+        guard let port = resolveTrackedAgentPort() else {
+            return false
+        }
+
+        portText = String(port)
+        serviceURLText = "http://127.0.0.1:\(port)"
+        statusText = "已连接到现有服务"
+        isRunning = true
+        appendLog("=== Reusing existing agent on port \(port) ===")
+        loadPersistedToken()
+        startActivityMonitorLoop()
+        scheduleBootstrap()
+        return true
+    }
+
+    private func resolveTrackedAgentPort() -> Int? {
+        guard let pid = readTrackedPid(), isProcessAlive(pid) else {
+            clearTrackedAgentFiles()
+            return nil
+        }
+
+        guard
+            let rawPort = try? String(contentsOf: sharedPortFileURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            let port = Int(rawPort)
+        else {
+            return nil
+        }
+
+        return port
+    }
+
+    private func readTrackedPid() -> Int32? {
+        guard
+            let rawPid = try? String(contentsOf: sharedPidFileURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            let pid = Int(rawPid),
+            pid > 0
+        else {
+            return nil
+        }
+
+        return Int32(pid)
+    }
+
+    private func isProcessAlive(_ pid: Int32) -> Bool {
+        kill(pid, 0) == 0
+    }
+
+    private func clearTrackedAgentFiles() {
+        try? FileManager.default.removeItem(at: sharedPidFileURL)
+        try? FileManager.default.removeItem(at: sharedPortFileURL)
+    }
+
     private func normalizedPort() -> Int {
-        let parsed = Int(portText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 8790
+        let parsed = Int(portText.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 8788
         let safePort = max(1025, min(parsed, 65535))
         portText = String(safePort)
         return safePort

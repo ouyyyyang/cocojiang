@@ -33,6 +33,7 @@ const refreshAllButton = document.querySelector("#refresh-all");
 const viewTitle = document.querySelector("#view-title");
 const socketState = document.querySelector("#socket-state");
 const serviceState = document.querySelector("#service-state");
+const stopLocalAgentButton = document.querySelector("#stop-local-agent");
 const pairState = document.querySelector("#pair-state");
 const banner = document.querySelector("#banner");
 const analyzeForm = document.querySelector("#analyze-form");
@@ -189,10 +190,13 @@ async function init() {
 
   if (state.localTrusted) {
     pairCard.classList.add("hidden");
+    stopLocalAgentButton.classList.remove("hidden");
     serviceState.textContent = `${state.config.serviceName} 已连接，本机直连模式已开启，无需配对。`;
     await afterPaired();
     return;
   }
+
+  stopLocalAgentButton.classList.add("hidden");
 
   if (!state.token) {
     showBanner("请输入 pairing token 后再开始桌面控制台测试。", false);
@@ -213,6 +217,7 @@ function wireEvents() {
   disconnectButton.addEventListener("click", disconnect);
   analyzeForm.addEventListener("submit", onAnalyzeSubmit);
   refreshAllButton.addEventListener("click", () => runUiTask(refreshEverything, "刷新失败"));
+  stopLocalAgentButton.addEventListener("click", () => runUiTask(stopLocalAgent, "停止服务失败"));
   copyDashboardTokenButton.addEventListener("click", () =>
     runUiTask(() => copyToClipboard(state.localConsoleInfo?.pairingToken || ""), "复制 Token 失败")
   );
@@ -486,6 +491,28 @@ async function saveSettings() {
     showBanner("模型配置已保存。", false);
   } finally {
     setButtonBusy(saveSettingsButton, false, "保存配置");
+  }
+}
+
+async function stopLocalAgent() {
+  if (!state.localTrusted) {
+    throw new Error("只有宿主机本机页面可以停止本地服务。");
+  }
+
+  setButtonBusy(stopLocalAgentButton, true, "停止中...");
+  try {
+    await fetchJson("/api/local-control/stop", {
+      method: "POST"
+    });
+    if (state.ws) {
+      state.ws.close();
+      state.ws = null;
+    }
+    setSocketState("WS Offline", "neutral");
+    serviceState.textContent = `${state.config.serviceName} 已停止，需要重新启动 agent 后才能继续访问。`;
+    showBanner("服务停止请求已发送。当前页面会保留，但后续请求将不可用。", false);
+  } finally {
+    setButtonBusy(stopLocalAgentButton, false, "停止服务");
   }
 }
 

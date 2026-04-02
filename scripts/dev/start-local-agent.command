@@ -21,10 +21,12 @@ if [[ -f "$PID_FILE" ]]; then
     fi
 
     URL="http://127.0.0.1:$PORT"
+    LOCAL_CONSOLE_URL="$URL/mac"
     echo "Agent is already running at $URL"
+    echo "Desktop console: $LOCAL_CONSOLE_URL"
 
     if [[ "${NO_OPEN:-0}" != "1" ]]; then
-      open "$URL"
+      open "$LOCAL_CONSOLE_URL"
     fi
 
     exit 0
@@ -51,6 +53,7 @@ PORT="$(find_port)" || {
 }
 
 URL="http://127.0.0.1:$PORT"
+LOCAL_CONSOLE_URL="$URL/mac"
 
 {
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') starting local agent ==="
@@ -67,7 +70,7 @@ fi
 
 echo "$PORT" > "$PORT_FILE"
 rm -f "$PID_FILE"
-nohup /bin/zsh -lc "cd '$ROOT_DIR'; echo '$PORT' > '$PORT_FILE'; echo \$\$ > '$PID_FILE'; exec env PORT='$PORT' APP_DATA_DIR='$APP_DATA_DIR' node build/node/core/agent/src/server.js >> '$LOG_FILE' 2>&1" >/dev/null 2>&1 &
+nohup /bin/zsh -lc "cd '$ROOT_DIR'; echo '$PORT' > '$PORT_FILE'; echo \$\$ > '$PID_FILE'; exec env PORT='$PORT' APP_DATA_DIR='$APP_DATA_DIR' SCREEN_PILOT_PID_FILE='$PID_FILE' SCREEN_PILOT_PORT_FILE='$PORT_FILE' node build/node/core/agent/src/server.js >> '$LOG_FILE' 2>&1" >/dev/null 2>&1 &
 
 for _ in {1..30}; do
   if [[ -f "$PID_FILE" ]]; then
@@ -88,9 +91,10 @@ for _ in {1..30}; do
     fi
 
     echo "Agent is ready at $URL"
+    echo "Desktop console: $LOCAL_CONSOLE_URL"
 
     if [[ "${NO_OPEN:-0}" != "1" ]]; then
-      open "$URL"
+      open "$LOCAL_CONSOLE_URL"
     fi
 
     exit 0

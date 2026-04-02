@@ -21,12 +21,22 @@ export interface AppConfig {
   codexBin: string;
   lmStudioBin: string;
   ollamaBin: string;
+  captureBackend: "auto" | "macos" | "windows";
   captureBin: string;
+  windowsCaptureScriptPath: string;
   codexTimeoutMs: number;
   lmStudioHost: string;
   ollamaHost: string;
   serviceName: string;
   pairingTokenEnv?: string;
+}
+
+function readCaptureBackend(value: string | undefined): "auto" | "macos" | "windows" {
+  return value === "macos" || value === "windows" || value === "auto" ? value : "auto";
+}
+
+function defaultCaptureBin(platform: NodeJS.Platform): string {
+  return platform === "win32" ? "powershell.exe" : "/usr/sbin/screencapture";
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -72,7 +82,9 @@ export function resolveConfig(): AppConfig {
     codexBin: process.env.CODEX_BIN || "codex",
     lmStudioBin: process.env.LMSTUDIO_BIN?.trim() || join(homedir(), ".lmstudio", "bin", "lms"),
     ollamaBin: process.env.OLLAMA_BIN?.trim() || "ollama",
-    captureBin: process.env.SCREENCAPTURE_BIN || "/usr/sbin/screencapture",
+    captureBackend: readCaptureBackend(process.env.SCREEN_PILOT_CAPTURE_BACKEND?.trim()),
+    captureBin: process.env.CAPTURE_BIN?.trim() || process.env.SCREENCAPTURE_BIN || defaultCaptureBin(process.platform),
+    windowsCaptureScriptPath: join(workspaceRoot, "scripts", "windows", "capture-screen.ps1"),
     codexTimeoutMs: readPositiveInt(process.env.CODEX_TIMEOUT_MS, 120_000),
     lmStudioHost: process.env.LMSTUDIO_HOST?.trim() || "http://127.0.0.1:1234",
     ollamaHost: process.env.OLLAMA_HOST?.trim() || "http://127.0.0.1:11434",

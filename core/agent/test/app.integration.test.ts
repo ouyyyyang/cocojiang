@@ -67,7 +67,9 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     codexBin: "codex",
     lmStudioBin: "lms",
     ollamaBin: "ollama",
+    captureBackend: "macos",
     captureBin: "/usr/sbin/screencapture",
+    windowsCaptureScriptPath: join(process.cwd(), "scripts", "windows", "capture-screen.ps1"),
     codexTimeoutMs: 5_000,
     lmStudioHost: "http://127.0.0.1:1234",
     ollamaHost: "http://127.0.0.1:11434",
@@ -76,6 +78,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   };
 
   let launchedCodexLogin = false;
+  let shutdownRequested = false;
   let lastPrompt = "";
   const runtimeJobs = new Map<string, any>();
   let runtimeJobCounter = 0;
@@ -188,6 +191,9 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     },
     launchCodexLogin: async () => {
       launchedCodexLogin = true;
+    },
+    onShutdownRequested: () => {
+      shutdownRequested = true;
     }
   });
 
@@ -407,5 +413,13 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   assert.equal(imageResponse.status, 200);
 
   ws.close();
+  const stopResponse = await fetch(`${baseUrl}/api/local-control/stop`, {
+    method: "POST"
+  });
+  assert.equal(stopResponse.status, 202);
+  for (let index = 0; index < 20 && !shutdownRequested; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.equal(shutdownRequested, true);
   await agent.close();
 });

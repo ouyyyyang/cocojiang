@@ -201,6 +201,8 @@ struct DesktopLaunchAuthResponse: Codable {
     let message: String
 }
 
+typealias DesktopActionAckResponse = DesktopLaunchAuthResponse
+
 struct DesktopLocalConsoleInfo: Codable {
     let pairingToken: String
     let macWebUrl: String

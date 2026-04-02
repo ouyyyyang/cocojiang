@@ -67,6 +67,7 @@ export async function createAgentServer(input?: {
   launchCodexLogin?: LaunchCodexLogin;
   localRuntimeManager?: LocalRuntimeManagerLike;
   promptTemplateStore?: PromptTemplateStore;
+  onShutdownRequested?: () => void | Promise<void>;
   logger?: Pick<Console, "log" | "error">;
 }): Promise<AgentServer> {
   const config = input?.config ?? resolveConfig();
@@ -99,6 +100,43 @@ export async function createAgentServer(input?: {
   const hubState: {
     hub?: WebSocketHub;
   } = {};
+  let closePromise: Promise<void> | null = null;
+
+  const closeServer = async () => {
+    if (closePromise) {
+      return await closePromise;
+    }
+
+    closePromise = (async () => {
+      hubState.hub?.close();
+      await localRuntimeManager.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+    })();
+
+    return await closePromise;
+  };
+
+  const requestShutdown = () => {
+    setTimeout(() => {
+      if (input?.onShutdownRequested) {
+        void input.onShutdownRequested();
+        return;
+      }
+
+      void closeServer().catch((error) => {
+        logger.error(error);
+      });
+    }, 120);
+  };
 
   const server = createServer(async (request, response) => {
     try {
@@ -121,6 +159,7 @@ export async function createAgentServer(input?: {
         localRuntimeManager,
         promptTemplateStore,
         promptTemplateState,
+        requestShutdown,
         activityStore
       });
     } catch (error) {
@@ -164,18 +203,7 @@ export async function createAgentServer(input?: {
     },
 
     async close() {
-      hubState.hub?.close();
-      await localRuntimeManager.close();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
+      await closeServer();
     }
   };
 }
@@ -204,6 +232,7 @@ async function routeRequest(input: {
   localRuntimeManager: LocalRuntimeManagerLike;
   promptTemplateStore: PromptTemplateStore;
   promptTemplateState: { value: string };
+  requestShutdown: () => void;
   activityStore: ActivityStore;
 }): Promise<void> {
   const method = input.request.method || "GET";
@@ -416,6 +445,20 @@ async function routeRequest(input: {
       return;
     }
 
+    if (method === "POST" && pathname === "/api/local-control/stop") {
+      if (!isLoopbackRequest(input.request)) {
+        sendJson(input.response, 403, { error: "Stopping the local agent is only available on loopback requests" });
+        return;
+      }
+
+      sendJson(input.response, 202, {
+        ok: true,
+        message: "Local agent shutdown requested"
+      });
+      input.requestShutdown();
+      return;
+    }
+
     if (method === "GET" && pathname === "/api/local-runtimes/status") {
       sendJson(input.response, 200, await input.localRuntimeManager.getStatus());
       return;
@@ -582,7 +625,9 @@ async function routeRequest(input: {
       const imagePath = manualCaptureImagePath(input.config);
       await ensureDir(manualTestsDir(input.config));
       await captureScreen({
+        captureBackend: input.config.captureBackend,
         captureBin: input.config.captureBin,
+        windowsCaptureScriptPath: input.config.windowsCaptureScriptPath,
         captureTarget: "main_display",
         outputPath: imagePath,
         runCommand: input.captureCommandRunner
@@ -621,7 +666,9 @@ async function routeRequest(input: {
 
       await ensureDir(manualTestsDir(input.config));
       await captureScreen({
+        captureBackend: input.config.captureBackend,
         captureBin: input.config.captureBin,
+        windowsCaptureScriptPath: input.config.windowsCaptureScriptPath,
         captureTarget: "main_display",
         outputPath: imagePath,
         runCommand: input.captureCommandRunner
@@ -746,7 +793,9 @@ async function processAnalysisSession(input: {
 
     const imagePath = input.store.imageFilePath(input.sessionId);
     await captureScreen({
+      captureBackend: input.config.captureBackend,
       captureBin: input.config.captureBin,
+      windowsCaptureScriptPath: input.config.windowsCaptureScriptPath,
       captureTarget: input.captureTarget,
       outputPath: imagePath,
       runCommand: input.captureCommandRunner

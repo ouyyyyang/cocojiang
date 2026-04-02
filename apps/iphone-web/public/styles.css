@@ -76,13 +76,11 @@ button {
 
 .app-stage {
   min-height: 100vh;
-  padding: 24px;
-  display: grid;
-  place-items: center;
+  padding: 0;
 }
 
 .device-preview {
-  width: min(100%, 458px);
+  width: 100%;
 }
 
 .device-caption {
@@ -688,6 +686,16 @@ textarea:focus {
 }
 
 @media (min-width: 820px) and (hover: hover) and (pointer: fine) {
+  .app-stage {
+    padding: 24px;
+    display: grid;
+    place-items: center;
+  }
+
+  .device-preview {
+    width: min(100%, 458px);
+  }
+
   .device-caption {
     display: flex;
   }
@@ -840,20 +848,27 @@ textarea:focus {
 
   #view-home .panel {
     display: grid;
-    grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     align-items: start;
   }
 
   #view-home .section-head,
-  #view-home .support-copy,
+  #view-home .support-copy {
+    grid-column: 1 / -1;
+  }
+
   #view-home .form-stack {
     grid-column: 1;
   }
 
-  #view-home #home-progress-card,
-  #view-home #home-result-card {
+  #view-home #home-progress-card {
     grid-column: 2;
+    align-self: stretch;
+  }
+
+  #view-home #home-result-card {
+    grid-column: 1 / -1;
     margin: 0;
   }
 
