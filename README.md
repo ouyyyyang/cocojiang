@@ -2,14 +2,220 @@
 
 > 截屏一下，让 AI 帮你看。
 
-Screen Pilot 是一个本地优先的屏幕分析工具。在电脑上跑一个 agent，它会截取屏幕、交给视觉模型（云端或本地）做分析，然后把结构化结果推回来。你可以在电脑浏览器里直接操作，也可以用手机远程触发和查看。
+Screen Pilot 会自动截取你的电脑屏幕，交给 AI 视觉模型分析，然后返回结构化的结果。你可以在电脑浏览器里操作，也可以用手机远程触发和查看。
 
-整个项目分为 **控制端**（电脑）和 **展示端**（手机）：
+支持 **macOS** 和 **Windows**，手机端 **iPhone / Android** 都能用。
+
+---
+
+## 能做什么
+
+- 一键截取屏幕，AI 自动分析内容
+- 识别屏幕上的算法题、文档、代码，给出解题思路和完整代码
+- 手机远程触发分析，实时查看结果
+- 支持 5 种 AI 模型：云端（Claude / OpenAI / Codex）和本地（LM Studio / Ollama）
+- 所有数据保存在本机，不上传任何第三方服务器
+
+---
+
+## 快速开始
+
+### 第一步：下载
+
+**方式 A（推荐）：** 点 GitHub 页面右上角绿色的 `Code` -> `Download ZIP`，解压后进入文件夹。
+
+**方式 B：** 如果你会用 git：
+```bash
+git clone https://github.com/yourname/screen-pilot.git
+cd screen-pilot
+```
+
+### 第二步：启动
+
+**macOS：** 双击 `start.command`
+
+> 首次可能提示"无法验证开发者"——右键该文件 -> 打开 -> 打开。只需做一次。
+
+**Windows：** 双击 `start.bat`
+
+不需要提前安装任何软件。脚本会自动完成一切：
+
+```
+检测 Node.js（没有就下到项目内部，不影响你的电脑）
+  → 安装依赖 → 编译 → 启动 → 自动打开浏览器
+```
+
+启动成功后浏览器会打开控制台页面，配对 token 自动复制到剪贴板。
+
+**停止服务：** 双击 `stop.command`（Mac）或 `stop.bat`（Windows）。
+
+### 第三步：选模型
+
+打开控制台后点左侧"配置"，页面上会有引导提示帮你选择：
+
+| 你的情况 | 推荐选择 | 需要什么 |
+|---------|---------|---------|
+| 想最快跑起来 | **Claude API** | 注册 [Anthropic](https://console.anthropic.com/) 拿一个 API Key |
+| 有 OpenAI 的 Key | **OpenAI API** | 填 Key 就行 |
+| 想完全免费离线 | **Ollama**（所有平台）或 **LM Studio**（Mac） | 需要在本机下载并运行模型 |
+
+选好 provider → 填 Key 或配置模型 → 保存 → 去"测试"页跑一次 → 看到截图和分析结果就说明搞定了。
+
+### 第四步：连手机（可选）
+
+1. 确保手机和电脑在同一个 WiFi
+2. 电脑终端里会打印局域网地址（类似 `http://192.168.x.x:8788/`）
+3. 手机浏览器打开这个地址（iPhone / Android 都行）
+4. 输入配对 token（终端里有，也自动复制到了剪贴板）
+
+手机只负责触发和查看，所有配置在电脑上完成。
+
+### macOS 抓屏权限
+
+首次抓屏时 macOS 会弹出权限请求，请允许。如果不小心拒绝了：
+
+**System Settings → Privacy & Security → Screen Recording** → 找到你的终端（Terminal / iTerm），打开开关，重启终端。
+
+---
+
+## 常见问题
+
+<details>
+<summary>双击 start.command 没反应 / 提示无法验证</summary>
+
+右键该文件 → 打开 → 在弹窗中点"打开"。macOS 对未签名脚本有安全限制，只需做一次。
+</details>
+
+<details>
+<summary>Windows 双击 start.bat 闪退</summary>
+
+尝试右键 → "以管理员身份运行"。如果仍然不行，打开 PowerShell 手动执行：
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-local-agent.ps1
+```
+</details>
+
+<details>
+<summary>抓屏测试失败 / 截图是空白的</summary>
+
+macOS 上这通常是 Screen Recording 权限没开。去 System Settings → Privacy & Security → Screen Recording，确认你的终端应用已勾选，然后重启终端。
+</details>
+
+<details>
+<summary>手机打不开页面</summary>
+
+确认手机和电脑在同一个 WiFi 网络，防火墙没有阻止端口访问。尝试在电脑浏览器里先打开局域网地址确认能访问。
+</details>
+
+<details>
+<summary>不想让脚本帮我装 Node.js</summary>
+
+脚本只会把 Node.js 下载到项目内部的 `runtime/node/` 目录，不修改系统 PATH、不装全局包。删掉 `runtime/node/` 就完全还原。如果你已经装了 Node.js 18+，脚本会直接用你的，不会下载任何东西。
+</details>
+
+---
+
+## 更多配置（进阶）
+
+<details>
+<summary>命令行启动方式</summary>
+
+```bash
+# macOS
+./scripts/dev/start-local-agent.command
+./scripts/dev/stop-local-agent.command
+
+# Windows
+pwsh -File ./scripts/dev/start-local-agent.ps1
+pwsh -File ./scripts/dev/stop-local-agent.ps1
+```
+</details>
+
+<details>
+<summary>npm 命令</summary>
+
+| 命令 | 作用 |
+|------|------|
+| `npm run dev` | 开发模式 |
+| `npm run build` | 编译 |
+| `npm run start` | 跑编译后的产物 |
+| `npm test` | 编译 + 跑全部测试 |
+| `npm run build:mac-app` | 打包 Mac 原生 `.app` |
+</details>
+
+<details>
+<summary>环境变量</summary>
+
+| 变量 | 作用 | 默认值 |
+|------|------|--------|
+| `PORT` | 服务端口 | `8787` |
+| `HOST` | 监听地址 | `0.0.0.0` |
+| `PAIRING_TOKEN` | 固定配对令牌 | 随机 UUID |
+| `APP_DATA_DIR` | 本地数据目录 | `~/.mac-screen-agent-mvp` |
+| `CODEX_TIMEOUT_MS` | 模型分析超时（所有 provider） | `120000` |
+| `MODEL_PROVIDER` | 默认 provider | `codex` |
+| `CLOUD_API_KEY` | Claude / OpenAI API Key | 无 |
+| `CLOUD_MODEL` | 云端模型标识 | 无 |
+| `OPENAI_BASE_URL` | OpenAI 兼容 API 地址 | `https://api.openai.com` |
+| `CODEX_BIN` | codex 可执行文件路径 | `codex` |
+| `LOCAL_VISION_MODEL` | 本地模型标识 | `qwen3-vl:8b` |
+| `LMSTUDIO_HOST` | LM Studio server 地址 | `http://127.0.0.1:1234` |
+| `OLLAMA_HOST` | Ollama 地址 | `http://127.0.0.1:11434` |
+| `SCREEN_PILOT_CAPTURE_BACKEND` | 抓屏 backend | `auto` |
+| `CAPTURE_BIN` | 抓屏命令路径 | 按平台自动选择 |
+</details>
+
+<details>
+<summary>模型 Provider 详细配置</summary>
+
+### Claude API (推荐云端)
+
+1. 去 [console.anthropic.com](https://console.anthropic.com/) 拿 API Key
+2. 控制台配置页选 `Claude API`，选模型（推荐 Sonnet 4.6），填 Key，保存
+
+### OpenAI API
+
+1. 去 [platform.openai.com](https://platform.openai.com/) 拿 Key
+2. 配置页选 `OpenAI API`，选模型，填 Key，保存
+3. 第三方兼容 API 可设置 `OPENAI_BASE_URL`
+
+### Codex
+
+1. 配置页选 `Codex`，点"开始 OpenAI 认证"
+2. 或命令行：`codex -c 'model_reasoning_effort="high"' login`
+
+### LM Studio (Mac 本地推荐)
+
+```bash
+~/.lmstudio/bin/lms bootstrap
+lms get --mlx qwen3-vl-8b
+lms server start
+lms load <model_key> --identifier qwen3-vl:8b
+```
+
+也可以直接用控制台里"运行时管理"的按钮完成。
+
+### Ollama
+
+```bash
+ollama pull qwen3-vl:8b
+ollama serve
+```
+
+控制台配置页切到 `Local Ollama` 即可。
+</details>
+
+---
+
+## 项目结构（开发者）
+
+<details>
+<summary>架构概览</summary>
 
 ```
 电脑（控制端）                        手机（展示端）
 ┌─────────────────────┐              ┌──────────────┐
-│  agent 核心          │  WebSocket   │  iPhone 网页  │
+│  agent 核心          │  WebSocket   │  手机网页     │
 │  抓屏 → 模型 → 结果  │ ◄──────────► │  配对、查看   │
 │                     │              └──────────────┘
 │  桌面控制台 /desktop  │
@@ -20,249 +226,34 @@ Screen Pilot 是一个本地优先的屏幕分析工具。在电脑上跑一个 
 | 层 | 目录 | 角色 |
 |----|------|------|
 | 核心 | `core/agent` | Node 18 + TypeScript，抓屏、调模型、存结果、推 WebSocket |
-| 桌面网页壳 | `apps/mac-web` | 浏览器里的控制台，macOS / Windows 通用，路由 `/desktop` |
-| Mac 原生壳 | `apps/mac-desktop` | SwiftUI 桌面 App，自动拉起 agent（macOS 专属） |
-| 手机网页壳 | `apps/iphone-web` | 配对后远程发起分析、查看结果，不做配置 |
-| 共享定义 | `shared/schemas` | 模型输出的 JSON Schema，所有 provider 共用 |
-| 脚本 | `scripts` | 启动、停止、打包，macOS 和 Windows 各一套 |
+| 桌面网页壳 | `apps/mac-web` | 浏览器控制台，macOS / Windows 通用 |
+| Mac 原生壳 | `apps/mac-desktop` | SwiftUI App（macOS 专属） |
+| 手机网页壳 | `apps/iphone-web` | 配对后远程触发和查看 |
+| 共享定义 | `shared/schemas` | 模型输出 JSON Schema |
+| 脚本 | `scripts` | 启动、停止、打包 |
+</details>
 
-## Quick Start
-
-### 1. 启动控制端（电脑）
-
-Clone 下来跑一行就行，脚本会自动检查 Node.js、安装依赖、编译、启动、打开浏览器：
-
-**macOS：**
-
-```bash
-./scripts/dev/start-local-agent.command
-```
-
-**Windows：**
-
-```powershell
-pwsh -File ./scripts/dev/start-local-agent.ps1
-```
-
-启动成功后浏览器会自动打开 `http://127.0.0.1:8788/desktop`，配对 token 也会自动复制到剪贴板。
-
-> 首次运行时脚本会自动 `npm install`，之后再跑就跳过了。如果没装 Node.js，脚本会提示你去哪下载。
-
-想要 Mac 原生 App？额外一行：
-
-```bash
-npm run build:mac-app
-# -> build/mac-desktop/Screen Pilot Native.app
-```
-
-### 2. 连接展示端（手机，可选）
-
-Agent 启动后，终端会打印出局域网地址。用 iPhone 浏览器打开，输入配对 token，就能远程发起分析、实时查看结果。
-
-手机只负责"看"和"触发"，所有配置、测试、模型管理都在电脑端完成。
-
-## Core Commands
-
-| 命令 | 作用 |
-|------|------|
-| `npm run dev` | 开发模式，ts-node 直接跑 |
-| `npm run build` | TypeScript 编译到 `build/node/` |
-| `npm run start` | 跑编译后的产物 |
-| `npm test` | 编译 + 跑全部测试 |
-| `npm run build:mac-app` | 打包 Mac 原生 `.app` |
-
-## Repository Layout
+<details>
+<summary>目录结构</summary>
 
 ```text
 .
-├── core/agent/          # agent 核心：路由、抓屏、模型调用、会话存储
-│   ├── src/             # TypeScript 源码
-│   └── test/            # 测试
+├── start.command / start.bat   # 双击启动
+├── stop.command / stop.bat     # 双击停止
+├── core/agent/                 # agent 核心源码和测试
 ├── apps/
-│   ├── mac-desktop/     # SwiftUI 原生壳 (macOS only)
-│   ├── mac-web/         # 桌面网页壳 (macOS + Windows)
-│   └── iphone-web/      # 手机网页壳
-├── scripts/
-│   ├── dev/             # 启动 / 停止脚本 (.command + .ps1)
-│   ├── build/           # 打包脚本
-│   └── windows/         # Windows 抓屏 PowerShell 脚本
-└── shared/schemas/      # 输出 JSON Schema
+│   ├── mac-desktop/            # SwiftUI 原生壳
+│   ├── mac-web/                # 桌面网页壳
+│   └── iphone-web/             # 手机网页壳
+├── scripts/                    # 启动/停止/打包脚本
+├── shared/schemas/             # 输出 JSON Schema
+├── runtime/                    # 运行时数据（gitignored）
+└── build/                      # 编译输出（gitignored）
 ```
+</details>
 
-运行产物和构建产物跟源码分开放：
-
-| 目录 | 内容 |
-|------|------|
-| `runtime/agent` | PID、端口、配对 token、会话数据 |
-| `runtime/mac-desktop` | Mac 壳日志和测试缓存 |
-| `build/node` | TypeScript 编译输出 |
-| `build/mac-desktop` | `.app` 和 SwiftPM 构建缓存 |
-
-## Requirements
-
-- **macOS** 或 **Windows**
-- Node.js **18.18+**
-- 如果用 Codex provider：需安装 `codex` CLI
-- macOS：终端需要 **Screen Recording** 权限
-- Windows：允许 `powershell.exe` 执行本地抓屏脚本
-
-## Model Providers
-
-Screen Pilot 支持五种模型 provider，你可以随时在控制台切换：
-
-| Provider | 类型 | 适合场景 |
-|----------|------|----------|
-| **Claude API** | 云端 | Anthropic Claude，视觉能力强，推荐云端首选 |
-| **OpenAI API** | 云端 | OpenAI GPT-4o 系列，也兼容其他 OpenAI 兼容 API |
-| **Codex** | 云端 | Codex CLI，需本地安装 codex |
-| **LM Studio (MLX)** | 本地 | Apple Silicon Mac，推荐本地首选 |
-| **Ollama** | 本地 | 跨平台，headless，适合 Windows / Linux |
-
-### Claude API (推荐云端)
-
-用 Anthropic 的 Claude 模型做视觉分析，支持 Sonnet / Opus / Haiku：
-
-1. 去 [console.anthropic.com](https://console.anthropic.com/) 拿一个 API Key
-2. 打开 `/desktop` 控制台 -> 配置
-3. 模型提供方选 `Claude API`
-4. 选择模型（推荐 `Claude Sonnet 4.6`）
-5. 填入 API Key，保存
-6. 去测试页跑一次验证
-
-也可以通过环境变量配置：`CLOUD_API_KEY=sk-ant-... MODEL_PROVIDER=claude`
-
-### OpenAI API
-
-用 OpenAI 的 GPT-4o 或任何兼容 API（Groq、Together 等）：
-
-1. 去 [platform.openai.com](https://platform.openai.com/) 拿 API Key
-2. 配置页选 `OpenAI API`，选模型，填 Key，保存
-
-如果要用第三方兼容 API，设置 `OPENAI_BASE_URL` 指向对应服务即可。
-
-### Codex
-
-通过本地安装的 Codex CLI 调用云端模型：
-
-1. 打开 `/desktop` 控制台 -> 配置
-2. 模型提供方选 `Codex`
-3. 点"开始 OpenAI 认证"（macOS 会打开 Terminal，Windows 会打开新控制台）
-
-或者命令行直接登录：
-
-```bash
-codex -c 'model_reasoning_effort="high"' login
-```
-
-### LM Studio (Mac 本地推荐)
-
-LM Studio 是一个带 GUI 的本地模型平台，自带 server 和 CLI。在 Apple Silicon Mac 上跑 MLX 版本的模型特别快。
-
-**5 分钟上手：**
-
-```bash
-# 1. 安装 LM Studio 并至少打开一次，然后：
-~/.lmstudio/bin/lms bootstrap
-
-# 2. 下载模型 (MLX 版本)
-lms get --mlx qwen3-vl-8b
-
-# 3. 启动 server 并加载
-lms server start
-lms load <model_key> --identifier qwen3-vl:8b    # model_key 从 lms ls 获取
-
-# 4. 确认就绪
-lms ps
-```
-
-回到 Screen Pilot 控制台，配置页选 `LM Studio (MLX)`，模型保持 `qwen3-vl:8b`，去测试页跑一次就行。
-
-> 你也可以直接用控制台里"运行时管理"的按钮来完成上面这些步骤，不用敲命令。
-
-### Ollama
-
-跨平台的本地模型服务，适合不想装 GUI 的场景：
-
-```bash
-ollama pull qwen3-vl:8b    # 或先拉个轻的: ollama pull qwen3-vl:4b
-ollama serve                # 如果提示连不上 127.0.0.1:11434
-```
-
-控制台配置页切到 `Local Ollama`，选模型，测试，完事。
-
-### 本地模型推荐 (24GB Mac)
-
-| 用途 | 推荐 |
-|------|------|
-| 主力 | LM Studio (MLX) + `qwen3-vl:8b` |
-| 快速验证 | `qwen3-vl:4b` |
-| 跨平台备选 | Ollama + `qwen3-vl:8b` |
-
-## Runtime Management
-
-`/desktop` 控制台和 Mac 原生壳都集成了运行时管理，你可以在界面上一键完成：
-
-- 检测 LM Studio / Ollama 是否已安装
-- 启动本地 server
-- 下载 / 加载 / 卸载当前配置模型
-- 删除模型（仅 Ollama，LM Studio 建议去它自己的界面删）
-
-**Screen Pilot 不做的事：**
-
-- 不帮你安装 LM Studio.app 或 Ollama.app（给你下载链接，自己装）
-- 不接管模型文件目录（LM Studio 的归 LM Studio，Ollama 的归 Ollama）
-
-## The Three Shells
-
-### Mac Desktop Shell (macOS only)
-
-原生 SwiftUI 壳，入口在 [apps/mac-desktop/Package.swift](apps/mac-desktop/Package.swift)。
-
-自动拉起 agent、模型配置、Codex 认证、抓屏测试、模型测试、历史和日志 —— 全部内置。开发 SwiftUI 壳本身可以用 Xcode 打开 Package.swift。
-
-### Desktop Web Shell (macOS + Windows)
-
-浏览器里的桌面控制台，路由 `/desktop`，入口 [apps/mac-web/public/index.html](apps/mac-web/public/index.html)。
-
-功能和原生壳对齐：配对、配置、认证、运行时管理、测试、历史，全都有。Windows 用户主要用这个。
-
-### iPhone Web Shell
-
-手机上的轻量壳，入口 [apps/iphone-web/public/index.html](apps/iphone-web/public/index.html)。
-
-只做五件事：配对、发起分析、看状态、看详情、翻历史。配置和测试这些"重活"留给桌面端。
-
-## Environment Variables
-
-| 变量 | 作用 | 默认值 |
-|------|------|--------|
-| `PORT` | 服务端口 | `8787` |
-| `HOST` | 监听地址 | `0.0.0.0` |
-| `PAIRING_TOKEN` | 固定配对令牌，不设则自动生成 | 随机 UUID |
-| `APP_DATA_DIR` | 本地数据目录 | `~/.mac-screen-agent-mvp` |
-| `CODEX_TIMEOUT_MS` | 模型分析超时（所有 provider 通用） | `120000` |
-| `MODEL_PROVIDER` | 默认 provider | `codex` |
-| `CLOUD_API_KEY` | Claude / OpenAI API Key | 无 |
-| `CLOUD_MODEL` | 云端模型标识 | 无 |
-| `OPENAI_BASE_URL` | OpenAI 兼容 API 地址 | `https://api.openai.com` |
-| `CODEX_BIN` | codex 可执行文件路径 | `codex` |
-| `LOCAL_VISION_MODEL` | 本地模型标识 | `qwen3-vl:8b` |
-| `LMSTUDIO_HOST` | LM Studio server 地址 | `http://127.0.0.1:1234` |
-| `OLLAMA_HOST` | Ollama 地址 | `http://127.0.0.1:11434` |
-| `SCREEN_PILOT_CAPTURE_BACKEND` | 抓屏 backend (`auto` / `macos` / `windows`) | `auto` |
-| `CAPTURE_BIN` | 抓屏命令路径 | macOS: `/usr/sbin/screencapture`，Windows: `powershell.exe` |
-
-## Notes
-
-- 抓屏 backend 按平台自动选择：`darwin` -> `macos`，`win32` -> `windows`
-- Windows 抓屏通过 [scripts/windows/capture-screen.ps1](scripts/windows/capture-screen.ps1) 实现，截取主显示器整屏
-- 当前只支持 `main_display`，接口预留了 `frontmost_window` 扩展位
-- LM Studio 和 Ollama 建议使用相同的模型标识（如 `qwen3-vl:8b`），方便切换
-- 历史会话和截图保存在 `APP_DATA_DIR/sessions/` 下
-
-## Documentation Map
-
-每个目录下都有自己的 README：
+<details>
+<summary>子目录文档</summary>
 
 - [apps/README.md](apps/README.md) — 三个壳的职责边界
 - [apps/mac-desktop/README.md](apps/mac-desktop/README.md) — Mac 原生壳
@@ -271,6 +262,7 @@ ollama serve                # 如果提示连不上 127.0.0.1:11434
 - [core/agent/README.md](core/agent/README.md) — Agent API 和 provider
 - [scripts/README.md](scripts/README.md) — 脚本说明
 - [shared/schemas/README.md](shared/schemas/README.md) — 输出 schema
+</details>
 
 ## References
 

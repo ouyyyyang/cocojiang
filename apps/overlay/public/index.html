@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Screen Pilot Overlay</title>
+    <style>
+      :root {
+        --bg-alpha: 0.35;
+        --text: rgba(255, 255, 255, 0.95);
+        --text-soft: rgba(255, 255, 255, 0.6);
+        --accent: #f0a060;
+        --radius: 12px;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        color: var(--text);
+        font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.55;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .overlay {
+        height: 100%;
+        overflow-y: auto;
+        padding: 14px;
+        background: rgba(0, 0, 0, var(--bg-alpha));
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        transition: opacity 0.3s ease;
+      }
+
+      .overlay::-webkit-scrollbar { width: 4px; }
+      .overlay::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 99px; }
+
+      .overlay.hidden-content { opacity: 0; pointer-events: none; }
+
+      .status-line {
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-soft);
+        margin-bottom: 10px;
+      }
+
+      .status-line .dot {
+        display: inline-block;
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: #555;
+        margin-right: 5px;
+        vertical-align: middle;
+      }
+
+      .status-line .dot.connected { background: #4ade80; }
+
+      .empty-msg {
+        color: var(--text-soft);
+        font-size: 0.85rem;
+        padding: 20px 0;
+        text-align: center;
+      }
+
+      .result-block {
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .result-block h3 {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 6px;
+      }
+
+      .result-block p, .result-block li {
+        font-size: 0.88rem;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .result-block ul {
+        padding-left: 16px;
+        list-style: disc;
+      }
+
+      .result-block li { margin-bottom: 3px; }
+
+      .answer-block p {
+        font-size: 0.92rem;
+        line-height: 1.7;
+      }
+
+      .code-block {
+        margin-top: 8px;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        overflow-x: auto;
+      }
+
+      .code-block code {
+        display: block;
+        font-family: "SF Mono", "Menlo", monospace;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        white-space: pre;
+        color: #e2ddd5;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay" class="overlay">
+      <div class="status-line">
+        <span id="status-dot" class="dot"></span>
+        <span id="status-text">connecting</span>
+      </div>
+      <div id="content">
+        <p class="empty-msg">waiting for analysis result...</p>
+      </div>
+    </div>
+
+    <script>
+      const overlay = document.getElementById("overlay");
+      const content = document.getElementById("content");
+      const statusDot = document.getElementById("status-dot");
+      const statusText = document.getElementById("status-text");
+
+      let ws = null;
+      let token = "";
+      let baseUrl = "";
+      let reconnectTimer = null;
+
+      async function init() {
+        try {
+          const info = await fetch("/api/local-console-info").then(r => r.json());
+          token = info.pairingToken;
+          baseUrl = location.origin;
+          connectWs();
+        } catch {
+          statusText.textContent = "cannot reach agent";
+        }
+      }
+
+      function connectWs() {
+        const wsUrl = `ws://${location.host}/ws?token=${encodeURIComponent(token)}`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          statusDot.classList.add("connected");
+          statusText.textContent = "connected";
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === "session_status" && msg.status === "done") {
+              loadSession(msg.sessionId);
+            }
+            if (msg.type === "overlay_control") {
+              handleControl(msg);
+            }
+          } catch {}
+        };
+
+        ws.onclose = () => {
+          statusDot.classList.remove("connected");
+          statusText.textContent = "disconnected";
+          clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connectWs, 3000);
+        };
+      }
+
+      async function loadSession(sessionId) {
+        try {
+          const session = await fetch(`/api/sessions/${sessionId}`, {
+            headers: { authorization: `Bearer ${token}` }
+          }).then(r => r.json());
+
+          if (!session.result) return;
+          renderResult(session.result);
+        } catch {}
+      }
+
+      function renderResult(result) {
+        let html = "";
+
+        if (result.summary) {
+          html += `<div class="result-block"><h3>Summary</h3><p>${esc(result.summary)}</p></div>`;
+        }
+
+        if (result.answer) {
+          html += `<div class="result-block answer-block"><h3>Answer</h3>${formatAnswer(result.answer)}</div>`;
+        }
+
+        if (result.key_points?.length) {
+          html += `<div class="result-block"><h3>Key Points</h3><ul>${result.key_points.map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>`;
+        }
+
+        if (result.next_actions?.length) {
+          html += `<div class="result-block"><h3>Next Steps</h3><ul>${result.next_actions.map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>`;
+        }
+
+        if (result.uncertainties?.length) {
+          html += `<div class="result-block"><h3>Uncertainties</h3><ul>${result.uncertainties.map(u => `<li>${esc(u)}</li>`).join("")}</ul></div>`;
+        }
+
+        content.innerHTML = html || `<p class="empty-msg">no result data</p>`;
+        overlay.scrollTop = 0;
+      }
+
+      function formatAnswer(text) {
+        const parts = text.split(/(```[\s\S]*?```)/g);
+        return parts.map(part => {
+          if (part.startsWith("```") && part.endsWith("```")) {
+            const code = part.slice(3, -3).replace(/^\w+\n/, "");
+            return `<div class="code-block"><code>${esc(code)}</code></div>`;
+          }
+          return `<p>${esc(part)}</p>`;
+        }).join("");
+      }
+
+      function handleControl(msg) {
+        if (msg.action === "set_opacity" && typeof msg.value === "number") {
+          document.documentElement.style.setProperty("--bg-alpha", Math.max(0, Math.min(1, msg.value)));
+        }
+        if (msg.action === "show") {
+          overlay.classList.remove("hidden-content");
+        }
+        if (msg.action === "hide") {
+          overlay.classList.add("hidden-content");
+        }
+        if (msg.action === "load_session" && msg.sessionId) {
+          loadSession(msg.sessionId);
+        }
+      }
+
+      function esc(text) {
+        const d = document.createElement("div");
+        d.textContent = text || "";
+        return d.innerHTML;
+      }
+
+      init();
+    </script>
+  </body>
+</html>

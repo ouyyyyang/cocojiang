@@ -53,6 +53,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     workspaceRoot: process.cwd(),
     iphonePublicDir: join(process.cwd(), "apps", "iphone-web", "public"),
     macWebPublicDir: join(process.cwd(), "apps", "mac-web", "public"),
+    overlayPublicDir: join(process.cwd(), "apps", "overlay", "public"),
     schemaPath: join(process.cwd(), "shared", "schemas", "codex-output.schema.json"),
     dataDir,
     sessionsDir: join(dataDir, "sessions"),
@@ -156,7 +157,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     captureCommandRunner: async (_command, args) => {
       const outputPath = args.at(-1);
       assert.ok(outputPath);
-      await writeFile(outputPath, "fake image");
+      await writeFile(outputPath, Buffer.alloc(1024, 0xff));
     },
     spawnProcess: (_command, args) => {
       const child = new StubProcess();

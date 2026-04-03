@@ -122,11 +122,25 @@
           <div class="panel">
             <div class="panel-head">
               <div>
-                <p class="section-kicker">Workflow</p>
-                <h3>主页说明</h3>
+                <p class="section-kicker">Stealth Overlay</p>
+                <h3>隐身覆盖窗口</h3>
               </div>
+              <span id="overlay-state" class="tag">未启动</span>
             </div>
-            <p class="status-copy">这里会把手机测试需要的 token 和访问地址直接放在主页上。你可以先拿手机打开局域网地址，再回到当前页继续做模型和抓屏测试。</p>
+            <p class="status-copy">在屏幕上显示一个半透明的分析结果窗口。该窗口对所有截屏、录屏、屏幕共享软件不可见，只有你自己能看到。</p>
+            <div class="stack" style="margin-top:12px">
+              <label class="field">
+                <span>背景透明度</span>
+                <input id="overlay-opacity" type="range" min="0" max="100" value="35" style="padding:4px 0" />
+              </label>
+              <div class="button-row">
+                <button id="overlay-show" class="primary-button" type="button">显示</button>
+                <button id="overlay-hide" class="ghost-button" type="button">隐藏</button>
+              </div>
+              <p class="status-copy" style="font-size:0.8rem">
+                需要先编译并打开覆盖窗口 App：<code style="background:rgba(0,0,0,0.06);padding:2px 6px;border-radius:4px">npm run build:overlay && open build/overlay/StealthOverlay.app</code>
+              </p>
+            </div>
           </div>
 
           <div class="grid-two">
@@ -262,6 +276,16 @@
                   <p class="section-kicker">Settings</p>
                   <h3>模型配置</h3>
                 </div>
+              </div>
+              <div id="provider-guide" class="info-block accent-block" style="margin-bottom:12px">
+                <h4>不知道选哪个？</h4>
+                <p style="margin:6px 0 0;line-height:1.6">
+                  <strong>推荐 Claude API</strong> — 视觉分析能力最强，注册即可用，按量计费。去
+                  <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer" style="color:var(--accent)">console.anthropic.com</a>
+                  拿一个 API Key，填到下面就行。<br>
+                  如果你有 OpenAI 的 Key，选 <strong>OpenAI API</strong> 也可以。<br>
+                  想完全离线不花钱？选 <strong>Ollama</strong>（所有平台）或 <strong>LM Studio</strong>（Mac 推荐），需要本机跑模型。
+                </p>
               </div>
               <div class="stack">
                 <label class="field">

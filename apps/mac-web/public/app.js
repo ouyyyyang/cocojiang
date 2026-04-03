@@ -89,6 +89,9 @@ const authStatusPill = document.querySelector("#auth-status-pill");
 const authDetail = document.querySelector("#auth-detail");
 const startAuthButton = document.querySelector("#start-auth");
 const refreshAuthButton = document.querySelector("#refresh-auth");
+const overlayShowButton = document.querySelector("#overlay-show");
+const overlayHideButton = document.querySelector("#overlay-hide");
+const overlayOpacitySlider = document.querySelector("#overlay-opacity");
 const refreshRuntimeStatusButton = document.querySelector("#refresh-runtime-status");
 const captureTestButton = document.querySelector("#capture-test-button");
 const captureProgress = document.querySelector("#capture-progress");
@@ -239,6 +242,9 @@ function wireEvents() {
   startAuthButton.addEventListener("click", () => runUiTask(startAuth, "启动认证失败"));
   refreshAuthButton.addEventListener("click", () => runUiTask(refreshAuthStatus, "刷新认证状态失败"));
   refreshRuntimeStatusButton.addEventListener("click", () => runUiTask(loadRuntimeStatus, "刷新运行时状态失败"));
+  overlayShowButton.addEventListener("click", () => sendOverlayControl("show"));
+  overlayHideButton.addEventListener("click", () => sendOverlayControl("hide"));
+  overlayOpacitySlider.addEventListener("input", () => sendOverlayControl("set_opacity", overlayOpacitySlider.value / 100));
   captureTestButton.addEventListener("click", () => runUiTask(runCaptureTest, "抓屏测试失败"));
   modelTestButton.addEventListener("click", () => runUiTask(runModelTest, "模型测试失败"));
   refreshHistoryButton.addEventListener("click", () => runUiTask(loadHistory, "刷新历史失败"));
@@ -506,6 +512,15 @@ async function saveSettings() {
   } finally {
     setButtonBusy(saveSettingsButton, false, "保存配置");
   }
+}
+
+async function sendOverlayControl(action, value) {
+  try {
+    await authedJson("/api/overlay/control", {
+      method: "POST",
+      body: JSON.stringify({ action, value })
+    });
+  } catch {}
 }
 
 async function stopLocalAgent() {

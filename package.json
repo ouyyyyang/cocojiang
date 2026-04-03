@@ -15,6 +15,7 @@
     "start": "node build/node/core/agent/src/server.js",
     "start:agent": "node build/node/core/agent/src/server.js",
     "build:mac-app": "./scripts/build/rebuild-native-app.sh",
+    "build:overlay": "./scripts/build/build-overlay.sh",
     "test": "npm run build && node --test build/node/core/agent/test"
   },
   "devDependencies": {

@@ -7,6 +7,7 @@ export interface AppConfig {
   workspaceRoot: string;
   iphonePublicDir: string;
   macWebPublicDir: string;
+  overlayPublicDir: string;
   schemaPath: string;
   dataDir: string;
   sessionsDir: string;
@@ -71,6 +72,7 @@ export function resolveConfig(): AppConfig {
     workspaceRoot,
     iphonePublicDir: join(workspaceRoot, "apps", "iphone-web", "public"),
     macWebPublicDir: join(workspaceRoot, "apps", "mac-web", "public"),
+    overlayPublicDir: join(workspaceRoot, "apps", "overlay", "public"),
     schemaPath: join(workspaceRoot, "shared", "schemas", "codex-output.schema.json"),
     dataDir,
     sessionsDir: join(dataDir, "sessions"),

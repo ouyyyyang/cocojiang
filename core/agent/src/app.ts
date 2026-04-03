@@ -637,6 +637,24 @@ async function routeRequest(input: {
       return;
     }
 
+    if (method === "POST" && pathname === "/api/overlay/control") {
+      const body = await readJsonBody<{
+        action: string;
+        value?: number;
+        sessionId?: string;
+      }>(input.request);
+
+      input.hubState.hub?.broadcast({
+        type: "overlay_control",
+        action: body.action,
+        value: body.value,
+        sessionId: body.sessionId
+      });
+
+      sendJson(input.response, 200, { ok: true });
+      return;
+    }
+
     if (method === "POST" && pathname === "/api/test/capture") {
       const imagePath = manualCaptureImagePath(input.config);
       await ensureDir(manualTestsDir(input.config));
@@ -1049,7 +1067,7 @@ async function runConfiguredAnalysis(input: {
 
 async function serveStatic(
   response: ServerResponse,
-  config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir">,
+  config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir" | "overlayPublicDir">,
   pathname: string
 ): Promise<void> {
   const target = resolveStaticTarget(config, pathname);
@@ -1112,13 +1130,21 @@ function sendResponse(
 }
 
 function resolveStaticTarget(
-  config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir">,
+  config: Pick<AppConfig, "iphonePublicDir" | "macWebPublicDir" | "overlayPublicDir">,
   pathname: string
 ): { publicDir: string; path: string } {
   if (pathname === "/desktop" || pathname.startsWith("/desktop/")) {
     const relativePath = pathname === "/desktop" ? "/" : pathname.slice("/desktop".length) || "/";
     return {
       publicDir: config.macWebPublicDir,
+      path: relativePath === "/" ? "/index.html" : relativePath
+    };
+  }
+
+  if (pathname === "/overlay" || pathname.startsWith("/overlay/")) {
+    const relativePath = pathname === "/overlay" ? "/" : pathname.slice("/overlay".length) || "/";
+    return {
+      publicDir: config.overlayPublicDir,
       path: relativePath === "/" ? "/index.html" : relativePath
     };
   }
