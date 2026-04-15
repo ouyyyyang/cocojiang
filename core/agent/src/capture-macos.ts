@@ -13,7 +13,7 @@ export async function captureScreenOnMacos(input: {
   }
 
   try {
-    await input.runCommand(input.captureBin, ["-x", "-m", input.outputPath]);
+    await input.runCommand(input.captureBin, ["-x", input.outputPath]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("exited with code 1") || message.includes("Permission") || message.includes("not permitted")) {

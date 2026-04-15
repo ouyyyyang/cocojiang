@@ -63,6 +63,7 @@ export interface AgentSettings {
   localVisionModel: string;
   cloudModel: string;
   cloudApiKey: string;
+  claudeBaseUrl: string;
 }
 
 export interface SessionEvent {

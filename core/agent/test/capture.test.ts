@@ -30,7 +30,7 @@ test("captureScreen runs screencapture on macos backend", async () => {
   });
 
   assert.equal(capturedCommand, "/usr/sbin/screencapture");
-  assert.deepEqual(capturedArgs, ["-x", "-m", "/tmp/screen.png"]);
+  assert.deepEqual(capturedArgs, ["-x", "/tmp/screen.png"]);
 });
 
 test("captureScreen runs PowerShell capture script on windows backend", async () => {

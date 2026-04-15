@@ -23,16 +23,79 @@ export function parseCodexLoginStatus(rawStatus: string): CodexLoginStatus {
   };
 }
 
+function codexCliMissingStatus(codexBin: string): CodexLoginStatus {
+  return {
+    authenticated: false,
+    authMode: null,
+    rawStatus: `Codex CLI not found (${codexBin}). Install Codex and add it to PATH, or set CODEX_BIN to the full executable path.`
+  };
+}
+
+function isCodexCommandMissingError(input: {
+  code: number | null;
+  output: string;
+  codexBin: string;
+}): boolean {
+  const output = input.output.trim();
+  if (!output && input.code !== 9009) {
+    return false;
+  }
+
+  if (input.code === 9009) {
+    return true;
+  }
+
+  if (/is not recognized as an internal or external command/i.test(output)) {
+    return true;
+  }
+
+  if (/不是内部或外部命令/.test(output)) {
+    return true;
+  }
+
+  if (/command not found/i.test(output)) {
+    return true;
+  }
+
+  const commandName = extractCommandName(input.codexBin);
+  if (
+    process.platform === "win32" &&
+    output.includes("�") &&
+    commandName &&
+    new RegExp(`'${escapeRegExp(commandName)}(?:\\.(?:cmd|exe|bat))?'`, "i").test(output)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function extractCommandName(command: string): string {
+  const unquoted = command.trim().replace(/^['"]|['"]$/g, "");
+  if (!unquoted) {
+    return "";
+  }
+
+  const segments = unquoted.split(/[\\/]/);
+  const leaf = segments.at(-1) || unquoted;
+  return leaf.replace(/\.(cmd|exe|bat)$/i, "");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function readCodexLoginStatus(input: {
   codexBin: string;
   workspaceRoot: string;
   spawnProcess?: SpawnProcess;
 }): Promise<CodexLoginStatus> {
   const spawnProcess = input.spawnProcess ?? defaultSpawnProcess;
+  const workspaceRoot = normalizeWorkspaceRootForCurrentPlatform(input.workspaceRoot);
   const child = spawnProcess(
-    input.codexBin,
+    normalizeWindowsCommandPath(input.codexBin),
     ["-c", 'model_reasoning_effort="high"', "login", "status"],
-    { cwd: input.workspaceRoot }
+    { cwd: workspaceRoot }
   );
 
   let stdout = "";
@@ -47,22 +110,48 @@ export async function readCodexLoginStatus(input: {
   });
 
   return await new Promise<CodexLoginStatus>((resolve, reject) => {
-    child.on("error", reject);
+    let settled = false;
+    const settleResolve = (status: CodexLoginStatus) => {
+      if (!settled) {
+        settled = true;
+        resolve(status);
+      }
+    };
+    const settleReject = (error: Error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        settleResolve(codexCliMissingStatus(input.codexBin));
+        return;
+      }
+
+      settleReject(error);
+    });
 
     child.on("close", (code) => {
       const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n").trim();
 
       if (code === 0) {
-        resolve(parseCodexLoginStatus(combined));
+        settleResolve(parseCodexLoginStatus(combined));
         return;
       }
 
       if (/not logged in/i.test(combined)) {
-        resolve(parseCodexLoginStatus(combined));
+        settleResolve(parseCodexLoginStatus(combined));
         return;
       }
 
-      reject(
+      if (isCodexCommandMissingError({ code, output: combined, codexBin: input.codexBin })) {
+        settleResolve(codexCliMissingStatus(input.codexBin));
+        return;
+      }
+
+      settleReject(
         new Error(
           combined
             ? `Failed to read Codex login status: ${combined}`
@@ -134,13 +223,23 @@ async function launchCodexLoginOnWindows(input: {
   codexBin: string;
   workspaceRoot: string;
 }): Promise<void> {
-  const command = buildCodexLoginCommandWindows(input);
+  const workspaceRoot = normalizeWindowsPath(input.workspaceRoot);
+  const codexBin = normalizeWindowsCommandPathForCmd(input.codexBin);
+  const command = buildCodexLoginCommandWindows({
+    codexBin,
+    workspaceRoot
+  });
 
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("cmd.exe", ["/c", "start", "cmd.exe", "/k", command], {
-      cwd: input.workspaceRoot,
-      stdio: ["ignore", "ignore", "pipe"]
-    });
+    const child = spawn(
+      "cmd.exe",
+      ["/d", "/s", "/c", "start", '""', "cmd.exe", "/k", command],
+      {
+        cwd: workspaceRoot,
+        stdio: ["ignore", "ignore", "pipe"],
+        windowsHide: false
+      }
+    );
 
     let stderr = "";
     child.stderr.on("data", (chunk) => {
@@ -154,6 +253,7 @@ async function launchCodexLoginOnWindows(input: {
         reject(error);
       }
     });
+
     child.on("close", (code) => {
       if (code === 0) {
         resolve();
@@ -173,7 +273,60 @@ export function buildCodexLoginCommandWindows(input: {
   codexBin: string;
   workspaceRoot: string;
 }): string {
-  return `cd /d ${winQuote(input.workspaceRoot)} && ${winQuote(input.codexBin)} -c "model_reasoning_effort=high" login`;
+  const codexCommand = isWindowsAbsolutePath(input.codexBin)
+    ? winQuote(input.codexBin)
+    : input.codexBin;
+
+  return `cd /d ${winQuote(input.workspaceRoot)} && ${codexCommand} -c "model_reasoning_effort=high" login`;
+}
+
+export function normalizeWorkspaceRootForCurrentPlatform(workspaceRoot: string): string {
+  if (process.platform !== "win32") {
+    return workspaceRoot;
+  }
+
+  return normalizeWindowsPath(workspaceRoot);
+}
+
+function normalizeWindowsCommandPath(command: string): string {
+  if (process.platform !== "win32") {
+    return command;
+  }
+
+  return normalizeWindowsCommandPathForCmd(command);
+}
+
+function normalizeWindowsCommandPathForCmd(command: string): string {
+  if (!command) {
+    return command;
+  }
+
+  if (!isWindowsAbsolutePath(command) && !isLikelyWslPath(command)) {
+    return command;
+  }
+
+  return normalizeWindowsPath(command);
+}
+
+function normalizeWindowsPath(value: string): string {
+  const trimmed = value.trim();
+
+  const driveMatch = trimmed.match(/^\/mnt\/([a-zA-Z])(\/.*)?$/);
+  if (driveMatch) {
+    const drive = driveMatch[1].toUpperCase();
+    const rest = (driveMatch[2] || "").replaceAll("/", "\\");
+    return `${drive}:\\${rest.replace(/^\\+/, "")}`;
+  }
+
+  return trimmed.replaceAll("/", "\\");
+}
+
+function isWindowsAbsolutePath(value: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(value) || /^\\\\/.test(value);
+}
+
+function isLikelyWslPath(value: string): boolean {
+  return value.startsWith("/mnt/");
 }
 
 function winQuote(value: string): string {
@@ -191,6 +344,7 @@ function defaultSpawnProcess(
 ): SpawnedProcessLike {
   return spawn(command, args, {
     cwd: options.cwd,
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32"
   });
 }

@@ -74,6 +74,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
     codexTimeoutMs: 5_000,
     lmStudioHost: "http://127.0.0.1:1234",
     ollamaHost: "http://127.0.0.1:11434",
+    claudeBaseUrl: "https://api.anthropic.com",
     openaiBaseUrl: "https://api.openai.com",
     defaultCloudModel: "",
     defaultCloudApiKey: "",
@@ -225,6 +226,7 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
   const settings = await settingsResponse.json();
   assert.equal(settings.codexModel, "gpt-5.4");
   assert.equal(settings.codexReasoningEffort, "high");
+  assert.equal(settings.claudeBaseUrl, "https://api.anthropic.com");
 
   const promptTemplateResponse = await fetch(`${baseUrl}/api/prompt-template`, {
     headers: {
@@ -266,10 +268,22 @@ test("agent server supports pairing, websocket updates, analysis, and history", 
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      codexModel: "gpt-5.4-mini"
+      codexModel: "gpt-5.4-mini",
+      claudeBaseUrl: " https://proxy.example.com/anthropic/ "
     })
   });
   assert.equal(saveSettingsResponse.status, 200);
+  const savedSettings = await saveSettingsResponse.json();
+  assert.equal(savedSettings.claudeBaseUrl, "https://proxy.example.com/anthropic");
+
+  const refreshedSettingsResponse = await fetch(`${baseUrl}/api/settings`, {
+    headers: {
+      authorization: "Bearer test-token"
+    }
+  });
+  assert.equal(refreshedSettingsResponse.status, 200);
+  const refreshedSettings = await refreshedSettingsResponse.json();
+  assert.equal(refreshedSettings.claudeBaseUrl, "https://proxy.example.com/anthropic");
 
   const runtimeStatusResponse = await fetch(`${baseUrl}/api/local-runtimes/status`, {
     headers: {

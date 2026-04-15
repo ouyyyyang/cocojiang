@@ -28,6 +28,7 @@ export interface AppConfig {
   codexTimeoutMs: number;
   lmStudioHost: string;
   ollamaHost: string;
+  claudeBaseUrl: string;
   openaiBaseUrl: string;
   defaultCloudModel: string;
   defaultCloudApiKey: string;
@@ -93,6 +94,7 @@ export function resolveConfig(): AppConfig {
     codexTimeoutMs: readPositiveInt(process.env.CODEX_TIMEOUT_MS, 120_000),
     lmStudioHost: process.env.LMSTUDIO_HOST?.trim() || "http://127.0.0.1:1234",
     ollamaHost: process.env.OLLAMA_HOST?.trim() || "http://127.0.0.1:11434",
+    claudeBaseUrl: process.env.ANTHROPIC_BASE_URL?.trim() || "https://api.anthropic.com",
     openaiBaseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com",
     defaultCloudModel: process.env.CLOUD_MODEL?.trim() || "",
     defaultCloudApiKey: process.env.CLOUD_API_KEY?.trim() || "",

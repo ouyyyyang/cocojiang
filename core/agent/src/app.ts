@@ -361,6 +361,7 @@ async function routeRequest(input: {
         modelName: resolveSelectedModel(settings),
         codexReasoningEffort: settings.codexReasoningEffort,
         cloudApiKey: settings.cloudApiKey,
+        claudeBaseUrl: settings.claudeBaseUrl,
         promptTemplate: input.promptTemplateState.value,
         question: session.question,
         clientSource: source,
@@ -408,6 +409,7 @@ async function routeRequest(input: {
         localVisionModel?: string;
         cloudModel?: string;
         cloudApiKey?: string;
+        claudeBaseUrl?: string;
       }>(input.request);
 
       const settings = await input.settingsStore.saveSettings({
@@ -416,7 +418,8 @@ async function routeRequest(input: {
         codexReasoningEffort: body.codexReasoningEffort,
         localVisionModel: body.localVisionModel,
         cloudModel: body.cloudModel,
-        cloudApiKey: body.cloudApiKey
+        cloudApiKey: body.cloudApiKey,
+        claudeBaseUrl: body.claudeBaseUrl
       });
       sendJson(input.response, 200, settings);
       return;
@@ -719,6 +722,7 @@ async function routeRequest(input: {
         modelName: selectedModel,
         codexReasoningEffort: settings.codexReasoningEffort,
         cloudApiKey: settings.cloudApiKey,
+        claudeBaseUrl: settings.claudeBaseUrl,
         spawnProcess: input.spawnProcess,
         onProgress: undefined
       });
@@ -807,6 +811,7 @@ async function processAnalysisSession(input: {
   modelName: string;
   codexReasoningEffort: "low" | "medium" | "high";
   cloudApiKey: string;
+  claudeBaseUrl: string;
   promptTemplate: string;
   question: string;
   clientSource: ClientSource;
@@ -878,6 +883,7 @@ async function processAnalysisSession(input: {
       modelName: input.modelName,
       codexReasoningEffort: input.codexReasoningEffort,
       cloudApiKey: input.cloudApiKey,
+      claudeBaseUrl: input.claudeBaseUrl,
       spawnProcess: input.spawnProcess,
       onProgress: async (message) => {
         await transitionSession(input.store, input.activityStore, input.hub, input.clientSource, input.sessionId, "analyzing", message);
@@ -999,12 +1005,17 @@ async function runConfiguredAnalysis(input: {
   modelName: string;
   codexReasoningEffort: "low" | "medium" | "high";
   cloudApiKey: string;
+  claudeBaseUrl: string;
   spawnProcess?: SpawnProcess;
   onProgress?: (message: string) => void | Promise<void>;
 }) {
   if (input.modelProvider === "claude") {
     return await runClaudeVisionAnalysis({
-      config: input.config,
+      config: {
+        schemaPath: input.config.schemaPath,
+        codexTimeoutMs: input.config.codexTimeoutMs,
+        claudeBaseUrl: input.claudeBaseUrl || input.config.claudeBaseUrl
+      },
       apiKey: input.cloudApiKey,
       imagePath: input.imagePath,
       question: input.question,

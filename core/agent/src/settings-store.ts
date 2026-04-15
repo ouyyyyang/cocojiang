@@ -14,6 +14,7 @@ export class SettingsStore {
       | "defaultLocalVisionModel"
       | "defaultCloudModel"
       | "defaultCloudApiKey"
+      | "claudeBaseUrl"
     >
   ) {}
 
@@ -33,7 +34,8 @@ export class SettingsStore {
       codexReasoningEffort: this.config.defaultCodexReasoningEffort,
       localVisionModel: this.config.defaultLocalVisionModel,
       cloudModel: this.config.defaultCloudModel,
-      cloudApiKey: this.config.defaultCloudApiKey
+      cloudApiKey: this.config.defaultCloudApiKey,
+      claudeBaseUrl: sanitizeBaseUrl(this.config.claudeBaseUrl, "https://api.anthropic.com")
     };
 
     await writeJsonAtomic(this.config.settingsFilePath, defaults);
@@ -48,7 +50,8 @@ export class SettingsStore {
         codexReasoningEffort: this.config.defaultCodexReasoningEffort,
         localVisionModel: this.config.defaultLocalVisionModel,
         cloudModel: this.config.defaultCloudModel,
-        cloudApiKey: this.config.defaultCloudApiKey
+        cloudApiKey: this.config.defaultCloudApiKey,
+        claudeBaseUrl: sanitizeBaseUrl(this.config.claudeBaseUrl, "https://api.anthropic.com")
       };
     }
 
@@ -62,7 +65,8 @@ export class SettingsStore {
       ),
       localVisionModel: sanitizeLocalVisionModel(loaded.localVisionModel, this.config.defaultLocalVisionModel),
       cloudModel: loaded.cloudModel?.trim() || this.config.defaultCloudModel,
-      cloudApiKey: loaded.cloudApiKey?.trim() || this.config.defaultCloudApiKey
+      cloudApiKey: loaded.cloudApiKey?.trim() || this.config.defaultCloudApiKey,
+      claudeBaseUrl: sanitizeBaseUrl(loaded.claudeBaseUrl, this.config.claudeBaseUrl)
     };
   }
 
@@ -74,12 +78,22 @@ export class SettingsStore {
       codexReasoningEffort: sanitizeCodexReasoningEffort(update.codexReasoningEffort, current.codexReasoningEffort),
       localVisionModel: sanitizeLocalVisionModel(update.localVisionModel, current.localVisionModel),
       cloudModel: update.cloudModel?.trim() || current.cloudModel,
-      cloudApiKey: update.cloudApiKey?.trim() || current.cloudApiKey
+      cloudApiKey: update.cloudApiKey?.trim() || current.cloudApiKey,
+      claudeBaseUrl: sanitizeBaseUrl(update.claudeBaseUrl, this.config.claudeBaseUrl)
     };
 
     await writeJsonAtomic(this.config.settingsFilePath, next);
     return next;
   }
+}
+
+export function sanitizeBaseUrl(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim().replace(/\/+$/, "");
+  if (!normalized) {
+    return fallback.replace(/\/+$/, "");
+  }
+
+  return normalized;
 }
 
 export function sanitizeCodexModel(value: string | undefined, fallback: string): string {

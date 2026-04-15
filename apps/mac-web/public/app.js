@@ -76,6 +76,8 @@ const cloudModelField = document.querySelector("#cloud-model-field");
 const cloudModelSelect = document.querySelector("#cloud-model");
 const cloudApiKeyField = document.querySelector("#cloud-api-key-field");
 const cloudApiKeyInput = document.querySelector("#cloud-api-key");
+const claudeBaseUrlField = document.querySelector("#claude-base-url-field");
+const claudeBaseUrlInput = document.querySelector("#claude-base-url");
 const cloudProviderNote = document.querySelector("#cloud-provider-note");
 const localModelField = document.querySelector("#local-model-field");
 const localVisionModelSelect = document.querySelector("#local-vision-model");
@@ -471,6 +473,7 @@ async function loadSettings() {
   localVisionModelSelect.value = settings.localVisionModel || "qwen3-vl:8b";
   cloudModelSelect.value = settings.cloudModel || "";
   cloudApiKeyInput.value = settings.cloudApiKey || "";
+  claudeBaseUrlInput.value = settings.claudeBaseUrl || "";
   toggleSettingsFields();
 }
 
@@ -498,7 +501,8 @@ async function saveSettings() {
         codexReasoningEffort: codexReasoningEffortSelect.value,
         localVisionModel: localVisionModelSelect.value,
         cloudModel: cloudModelSelect.value,
-        cloudApiKey: cloudApiKeyInput.value
+        cloudApiKey: cloudApiKeyInput.value,
+        claudeBaseUrl: claudeBaseUrlInput.value
       })
     });
     modelProviderSelect.value = settings.modelProvider || "codex";
@@ -507,6 +511,7 @@ async function saveSettings() {
     localVisionModelSelect.value = settings.localVisionModel || "qwen3-vl:8b";
     cloudModelSelect.value = settings.cloudModel || "";
     cloudApiKeyInput.value = settings.cloudApiKey || "";
+    claudeBaseUrlInput.value = settings.claudeBaseUrl || "";
     toggleSettingsFields();
     showBanner("模型配置已保存。", false);
   } finally {
@@ -939,6 +944,7 @@ function toggleSettingsFields() {
   const provider = modelProviderSelect.value;
   const isCodex = provider === "codex";
   const isCloud = provider === "claude" || provider === "openai";
+  const isClaude = provider === "claude";
   const isLocal = provider === "lmstudio" || provider === "ollama";
 
   codexModelSelect.closest(".field").classList.toggle("hidden", !isCodex);
@@ -947,6 +953,7 @@ function toggleSettingsFields() {
 
   cloudModelField.classList.toggle("hidden", !isCloud);
   cloudApiKeyField.classList.toggle("hidden", !isCloud);
+  claudeBaseUrlField.classList.toggle("hidden", !isClaude);
   cloudProviderNote.classList.toggle("hidden", !isCloud);
 
   localModelField.classList.toggle("hidden", !isLocal);
@@ -957,7 +964,7 @@ function toggleSettingsFields() {
     populateModelOptions(cloudModelSelect, models, cloudModelSelect.value || models[0]?.slug || "");
     cloudProviderNote.textContent =
       provider === "claude"
-        ? "需要 Anthropic API Key。在 console.anthropic.com 获取。"
+        ? "需要 Anthropic API Key。默认使用官方 API，也可以填写 Claude Base URL 接入代理或兼容网关。"
         : "需要 OpenAI API Key。在 platform.openai.com 获取。支持所有 OpenAI 兼容 API。";
   }
 

@@ -238,6 +238,7 @@ function defaultSpawnProcess(
 ): SpawnedProcessLike {
   return spawn(command, args, {
     cwd: options.cwd,
-    stdio: ["pipe", "pipe", "pipe"]
+    stdio: ["pipe", "pipe", "pipe"],
+    shell: process.platform === "win32"
   });
 }

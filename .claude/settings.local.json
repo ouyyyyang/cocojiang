@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --prefix \"/mnt/h/program/cocojiang\" run build)",
+      "Bash(node --test \"/mnt/h/program/cocojiang/build/node/core/agent/test/codex-login.test.js\")",
+      "Bash(node --test \"/mnt/h/program/cocojiang/build/node/core/agent/test/codex-login.test.js\" \"/mnt/h/program/cocojiang/build/node/core/agent/test/codex.test.js\")",
+      "Skill(claude-api)",
+      "Bash(npm run:*)",
+      "Bash(node --test build/node/core/agent/test/settings-store.test.js build/node/core/agent/test/app.integration.test.js)",
+      "Bash(node --test build/node/core/agent/test/codex-login.test.js)",
+      "Bash(node --test build/node/core/agent/test/capture.test.js)"
+    ]
+  }
+}

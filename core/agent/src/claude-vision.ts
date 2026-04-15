@@ -10,7 +10,7 @@ interface ClaudeMessageResponse {
 }
 
 export async function runClaudeVisionAnalysis(input: {
-  config: Pick<AppConfig, "schemaPath" | "codexTimeoutMs">;
+  config: Pick<AppConfig, "schemaPath" | "codexTimeoutMs" | "claudeBaseUrl">;
   apiKey: string;
   imagePath: string;
   question: string;
@@ -36,11 +36,12 @@ export async function runClaudeVisionAnalysis(input: {
 
   await input.onProgress?.("Uploading screenshot to Claude");
 
+  const baseUrl = input.config.claudeBaseUrl.replace(/\/+$/, "");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.config.codexTimeoutMs);
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -102,7 +103,7 @@ export async function runClaudeVisionAnalysis(input: {
 
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("fetch failed")) {
-      throw new Error("Failed to reach the Claude API. Check your network connection.");
+      throw new Error(`Failed to reach Claude API at ${baseUrl}. Check your network connection.`);
     }
 
     throw error instanceof Error ? error : new Error(message);
